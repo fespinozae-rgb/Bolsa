@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Monitor Bursátil — Chile</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #12182A; --panel: #1A2238; --panel-2: #212B47; --border: #2B3559;
+    --text: #ECE7DA; --text-muted: #8B93AC;
+    --copper: #C08552; --positive: #57A776; --negative: #C4635A; --flat: #6E7793;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'Inter', -apple-system, sans-serif; background: var(--bg); color: var(--text); }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 32px 20px 60px; }
+  .mono { font-family: 'IBM Plex Mono', ui-monospace, monospace; }
+  .serif { font-family: 'Fraunces', Georgia, serif; }
+  header { display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 14px; margin-bottom: 24px; border-bottom: 1px solid var(--border); padding-bottom: 20px; }
+  h1 { font-family: 'Fraunces', serif; font-size: 30px; font-weight: 500; margin: 0; letter-spacing: -0.01em; }
+  .subtitle { color: var(--text-muted); font-size: 14px; margin-top: 6px; }
+  select { background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 9px 12px; border-radius: 8px; font-size: 13px; font-family: inherit; }
+  .kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 24px; }
+  @media (max-width: 900px) { .kpis { grid-template-columns: repeat(2, 1fr); } .grid-2, .movers { grid-template-columns: 1fr !important; } }
+  .kpi { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .kpi-label { font-size: 11px; color: var(--text-muted); margin-bottom: 6px; }
+  .kpi-value { font-size: 24px; font-family: 'IBM Plex Mono', monospace; font-weight: 600; }
+  .grid-2 { display: grid; grid-template-columns: 1.3fr 1fr; gap: 16px; margin-bottom: 24px; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+  .panel h3 { margin: 0 0 14px; font-size: 15px; font-weight: 600; font-family: 'Fraunces', serif; }
+  .movers { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 24px; }
+  .mover-row { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 13px; cursor: pointer; }
+  .mover-row:last-child { border-bottom: none; }
+  .mover-row:hover { color: var(--copper); }
+  .pill { padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+  .pill.pos { background: rgba(87,167,118,0.16); color: var(--positive); }
+  .pill.neg { background: rgba(196,99,90,0.16); color: var(--negative); }
+  .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+  .search { display: flex; align-items: center; gap: 8px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; flex: 1; min-width: 180px; }
+  .search input { background: transparent; border: none; outline: none; color: var(--text); font-size: 13px; width: 100%; font-family: inherit; }
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+  .tab { background: transparent; border: 1px solid var(--border); color: var(--text-muted); padding: 8px 13px; border-radius: 20px; font-size: 12px; cursor: pointer; font-family: inherit; }
+  .tab.active { background: var(--copper); border-color: var(--copper); color: #1A1208; font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 10px 14px; text-align: right; }
+  th { color: var(--text-muted); font-size: 11px; font-weight: 500; border-bottom: 1px solid var(--border); cursor: pointer; white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  td { border-bottom: 1px solid rgba(43,53,89,0.5); font-family: 'IBM Plex Mono', monospace; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover { background: var(--panel-2); }
+  .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; }
+  .empty { color: var(--text-muted); font-size: 13px; text-align: center; padding: 30px 0; }
+  .footer { margin-top: 30px; padding-top: 18px; border-top: 1px solid var(--border); font-size: 11.5px; color: var(--text-muted); line-height: 1.6; }
+  .close-btn { background: transparent; border: none; color: var(--text-muted); cursor: pointer; font-size: 16px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Monitor Bursátil — Chile</h1>
+      <div class="subtitle" id="subtitle">Cargando…</div>
+    </div>
+    <div>
+      <select id="dateSelect"></select>
+    </div>
+  </header>
+
+  <div class="kpis" id="kpis"></div>
+
+  <div class="grid-2">
+    <div class="panel">
+      <h3>Rendimiento por sector</h3>
+      <canvas id="sectorChart" height="220"></canvas>
+    </div>
+    <div class="panel">
+      <h3>Evolución del mercado</h3>
+      <canvas id="marketTrendChart" height="220"></canvas>
+      <div class="empty" id="marketTrendEmpty" style="display:none;"></div>
+    </div>
+  </div>
+
+  <div class="movers">
+    <div class="panel">
+      <h3>↑ Mayores alzas</h3>
+      <div id="gainersList"></div>
+    </div>
+    <div class="panel">
+      <h3>↓ Mayores bajas</h3>
+      <div id="losersList"></div>
+    </div>
+    <div class="panel">
+      <h3>◆ Más activas</h3>
+      <div id="activeList"></div>
+    </div>
+  </div>
+
+  <div class="panel" id="trendPanel" style="display:none; margin-bottom:24px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+      <h3 id="trendTitle" style="margin:0;">Tendencia</h3>
+      <button class="close-btn" id="closeTrend">✕</button>
+    </div>
+    <canvas id="symbolTrendChart" height="200"></canvas>
+    <div class="empty" id="symbolTrendEmpty" style="display:none;"></div>
+  </div>
+
+  <div class="panel">
+    <div class="toolbar">
+      <div class="search">
+        🔍 <input id="searchInput" placeholder="Buscar símbolo…" />
+      </div>
+      <div class="tabs" id="tabs">
+        <button class="tab active" data-tab="all">Todas</button>
+        <button class="tab" data-tab="gainers">Alzas</button>
+        <button class="tab" data-tab="losers">Bajas</button>
+        <button class="tab" data-tab="flat">Sin cambio</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th data-key="symbol">Símbolo</th>
+            <th data-key="price">Precio</th>
+            <th data-key="change">Variación %</th>
+            <th data-key="volume">Volumen</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="footer">
+    Datos de Yahoo Finance, actualizados automáticamente cada día de mercado a las ~17:00 (hora de Chile) vía GitHub Actions.
+    Universo de seguimiento limitado a las acciones más líquidas — edita <code>scripts/fetch_data.py</code> para agregar o quitar tickers.
+    Información referencial, puede contener errores o desfases, y no constituye asesoría de inversión.
+  </div>
+</div>
+
+<script>
+let history = [];
+let currentDate = null;
+let sortKey = "change", sortDir = "desc";
+let filterTab = "all";
+let searchTerm = "";
+let selectedSymbol = null;
+let sectorChart, marketTrendChart, symbolTrendChart;
+
+const fmtCLP = (n) => n == null ? "—" : n.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtPct = (n) => n == null ? "—" : (n > 0 ? "+" : "") + n.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + "%";
+const fmtDate = (d) => new Date(d + "T12:00:00").toLocaleDateString("es-CL", { day: "2-digit", month: "short", year: "numeric" });
+const fmtVol = (n) => {
+  if (n == null) return "—";
+  if (n >= 1e9) return (n / 1e9).toLocaleString("es-CL", {maximumFractionDigits:1}) + "B";
+  if (n >= 1e6) return (n / 1e6).toLocaleString("es-CL", {maximumFractionDigits:1}) + "M";
+  if (n >= 1e3) return (n / 1e3).toLocaleString("es-CL", {maximumFractionDigits:1}) + "K";
+  return String(n);
+};
+
+function currentSnapshot() {
+  return history.find(h => h.date === currentDate) || history[history.length - 1];
+}
+
+function render() {
+  const snap = currentSnapshot();
+  if (!snap) return;
+  document.getElementById("subtitle").textContent =
+    `Bolsa de Santiago · ${snap.stocks.length} instrumentos seguidos · captura del ${fmtDate(snap.date)}`;
+
+  renderKpis(snap);
+  renderSectorChart(snap);
+  renderMarketTrend();
+  renderMovers(snap);
+  renderTable(snap);
+  renderSymbolTrend();
+}
+
+function renderKpis(snap) {
+  const total = snap.stocks.length;
+  const gainers = snap.stocks.filter(s => s.change > 0).length;
+  const losers = snap.stocks.filter(s => s.change < 0).length;
+  const flat = total - gainers - losers;
+  const avg = snap.stocks.reduce((a, s) => a + (s.change || 0), 0) / total;
+  const el = document.getElementById("kpis");
+  el.innerHTML = `
+    <div class="kpi"><div class="kpi-label">Instrumentos</div><div class="kpi-value">${total}</div></div>
+    <div class="kpi"><div class="kpi-label">En alza</div><div class="kpi-value" style="color:var(--positive)">${gainers}</div></div>
+    <div class="kpi"><div class="kpi-label">En baja</div><div class="kpi-value" style="color:var(--negative)">${losers}</div></div>
+    <div class="kpi"><div class="kpi-label">Sin cambio</div><div class="kpi-value" style="color:var(--flat)">${flat}</div></div>
+    <div class="kpi"><div class="kpi-label">Variación promedio</div><div class="kpi-value" style="color:${avg>=0?'var(--positive)':'var(--negative)'}">${fmtPct(avg)}</div></div>
+  `;
+}
+
+function renderSectorChart(snap) {
+  const sorted = [...snap.sectors].sort((a, b) => b.change - a.change);
+  if (sectorChart) sectorChart.destroy();
+  sectorChart = new Chart(document.getElementById("sectorChart"), {
+    type: "bar",
+    data: {
+      labels: sorted.map(s => s.name),
+      datasets: [{
+        data: sorted.map(s => s.change),
+        backgroundColor: sorted.map(s => s.change >= 0 ? "#57A776" : "#C4635A"),
+        borderRadius: 4,
+      }],
+    },
+    options: {
+      indexAxis: "y",
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${c.raw}%` } } },
+      scales: {
+        x: { ticks: { color: "#8B93AC", callback: (v) => v + "%" }, grid: { color: "#2B3559" } },
+        y: { ticks: { color: "#ECE7DA", font: { size: 11 } }, grid: { display: false } },
+      },
+    },
+  });
+}
+
+function renderMarketTrend() {
+  const empty = document.getElementById("marketTrendEmpty");
+  const canvas = document.getElementById("marketTrendChart");
+  if (history.length < 2) {
+    canvas.style.display = "none";
+    empty.style.display = "block";
+    empty.textContent = `Solo hay una captura guardada (${fmtDate(history[0]?.date)}). Vuelve mañana para ver la tendencia.`;
+    return;
+  }
+  canvas.style.display = "block";
+  empty.style.display = "none";
+  const points = history.map(h => ({
+    date: h.date,
+    avg: h.stocks.reduce((a, s) => a + (s.change || 0), 0) / h.stocks.length,
+  }));
+  if (marketTrendChart) marketTrendChart.destroy();
+  marketTrendChart = new Chart(canvas, {
+    type: "line",
+    data: {
+      labels: points.map(p => fmtDate(p.date)),
+      datasets: [{ data: points.map(p => p.avg.toFixed(2)), borderColor: "#C08552", backgroundColor: "#C08552", tension: 0.3 }],
+    },
+    options: {
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${c.raw}%` } } },
+      scales: {
+        x: { ticks: { color: "#8B93AC" }, grid: { color: "#2B3559" } },
+        y: { ticks: { color: "#8B93AC", callback: (v) => v + "%" }, grid: { color: "#2B3559" } },
+      },
+    },
+  });
+}
+
+function renderMovers(snap) {
+  const withVol = snap.stocks;
+  const gainers = [...withVol].filter(s => s.change != null).sort((a, b) => b.change - a.change).slice(0, 6);
+  const losers = [...withVol].filter(s => s.change != null).sort((a, b) => a.change - b.change).slice(0, 6);
+  const active = [...withVol].filter(s => s.volume).sort((a, b) => b.volume - a.volume).slice(0, 6);
+
+  const rowHtml = (s, valueHtml) => `<div class="mover-row" onclick="selectSymbol('${s.symbol}')"><span class="mono">${s.symbol}</span>${valueHtml}</div>`;
+
+  document.getElementById("gainersList").innerHTML = gainers.map(s => rowHtml(s, `<span class="pill pos">${fmtPct(s.change)}</span>`)).join("");
+  document.getElementById("losersList").innerHTML = losers.map(s => rowHtml(s, `<span class="pill neg">${fmtPct(s.change)}</span>`)).join("");
+  document.getElementById("activeList").innerHTML = active.map(s => rowHtml(s, `<span class="mono" style="color:var(--text-muted); font-size:12px;">${fmtVol(s.volume)}</span>`)).join("");
+}
+
+function renderTable(snap) {
+  let list = snap.stocks.slice();
+  if (searchTerm) list = list.filter(s => s.symbol.toUpperCase().includes(searchTerm.toUpperCase()));
+  if (filterTab === "gainers") list = list.filter(s => s.change > 0);
+  else if (filterTab === "losers") list = list.filter(s => s.change < 0);
+  else if (filterTab === "flat") list = list.filter(s => s.change === 0);
+
+  list.sort((a, b) => {
+    let av = a[sortKey], bv = b[sortKey];
+    if (av == null) av = sortKey === "volume" ? -1 : -Infinity;
+    if (bv == null) bv = sortKey === "volume" ? -1 : -Infinity;
+    if (typeof av === "string") return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
+    return sortDir === "asc" ? av - bv : bv - av;
+  });
+
+  const body = document.getElementById("tableBody");
+  if (list.length === 0) {
+    body.innerHTML = `<tr><td colspan="4" class="empty">No hay acciones que coincidan con el filtro.</td></tr>`;
+    return;
+  }
+  body.innerHTML = list.map(s => `
+    <tr onclick="selectSymbol('${s.symbol}')">
+      <td class="mono" style="text-align:left; font-weight:600;">${s.symbol}</td>
+      <td>${fmtCLP(s.price)}</td>
+      <td style="color:${s.change > 0 ? 'var(--positive)' : s.change < 0 ? 'var(--negative)' : 'var(--flat)'}">${fmtPct(s.change)}</td>
+      <td style="color:var(--text-muted)">${fmtVol(s.volume)}</td>
+    </tr>
+  `).join("");
+}
+
+function selectSymbol(sym) {
+  selectedSymbol = sym;
+  document.getElementById("trendPanel").style.display = "block";
+  document.getElementById("trendTitle").textContent = "Tendencia — " + sym;
+  renderSymbolTrend();
+  document.getElementById("trendPanel").scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+window.selectSymbol = selectSymbol;
+
+function renderSymbolTrend() {
+  const canvas = document.getElementById("symbolTrendChart");
+  const empty = document.getElementById("symbolTrendEmpty");
+  if (!selectedSymbol) { document.getElementById("trendPanel").style.display = "none"; return; }
+
+  const points = history
+    .map(h => {
+      const stock = h.stocks.find(s => s.symbol === selectedSymbol);
+      return stock ? { date: h.date, price: stock.price } : null;
+    })
+    .filter(Boolean);
+
+  if (points.length < 2) {
+    canvas.style.display = "none";
+    empty.style.display = "block";
+    empty.textContent = `Solo hay un dato para ${selectedSymbol}. Vuelve en unos días para ver su tendencia.`;
+    return;
+  }
+  canvas.style.display = "block";
+  empty.style.display = "none";
+  if (symbolTrendChart) symbolTrendChart.destroy();
+  symbolTrendChart = new Chart(canvas, {
+    type: "line",
+    data: {
+      labels: points.map(p => fmtDate(p.date)),
+      datasets: [{ data: points.map(p => p.price), borderColor: "#C08552", backgroundColor: "#C08552", tension: 0.3 }],
+    },
+    options: {
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => fmtCLP(c.raw) } } },
+      scales: {
+        x: { ticks: { color: "#8B93AC" }, grid: { color: "#2B3559" } },
+        y: { ticks: { color: "#8B93AC" }, grid: { color: "#2B3559" } },
+      },
+    },
+  });
+}
+
+document.getElementById("closeTrend").addEventListener("click", () => {
+  selectedSymbol = null;
+  document.getElementById("trendPanel").style.display = "none";
+});
+
+document.getElementById("searchInput").addEventListener("input", (e) => {
+  searchTerm = e.target.value;
+  render();
+});
+
+document.querySelectorAll(".tab").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    filterTab = btn.dataset.tab;
+    render();
+  });
+});
+
+document.querySelectorAll("th[data-key]").forEach(th => {
+  th.addEventListener("click", () => {
+    const key = th.dataset.key;
+    if (sortKey === key) sortDir = sortDir === "asc" ? "desc" : "asc";
+    else { sortKey = key; sortDir = "desc"; }
+    render();
+  });
+});
+
+document.getElementById("dateSelect").addEventListener("change", (e) => {
+  currentDate = e.target.value;
+  render();
+});
+
+async function init() {
+  try {
+    const res = await fetch("./data/history.json", { cache: "no-store" });
+    history = await res.json();
+    history.sort((a, b) => a.date.localeCompare(b.date));
+    currentDate = history[history.length - 1].date;
+    const sel = document.getElementById("dateSelect");
+    sel.innerHTML = history.map(h => `<option value="${h.date}">${fmtDate(h.date)}</option>`).reverse().join("");
+    sel.value = currentDate;
+    render();
+  } catch (err) {
+    document.getElementById("subtitle").textContent = "No se pudo cargar data/history.json — revisa que el archivo exista y sea válido.";
+    console.error(err);
+  }
+}
+init();
+</script>
+</body>
+</html>

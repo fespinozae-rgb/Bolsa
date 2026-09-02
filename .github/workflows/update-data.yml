@@ -1,1 +1,35 @@
+name: Actualizar datos Bolsa de Santiago
 
+on:
+  schedule:
+    - cron: "0 21 * * 1-5" # ~17:00 CLT, lunes a viernes
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clonar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install yfinance
+
+      - name: Descargar y guardar datos del día
+        run: python scripts/fetch_data.py
+
+      - name: Guardar cambios en el repositorio
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/history.json
+          git diff --quiet --cached || git commit -m "Actualización de datos $(date +'%Y-%m-%d')"
+          git push

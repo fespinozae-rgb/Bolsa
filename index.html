@@ -60,6 +60,21 @@
   .empty { color: var(--text-muted); font-size: 13px; text-align: center; padding: 30px 0; }
   .footer { margin-top: 30px; padding-top: 18px; border-top: 1px solid var(--border); font-size: 11.5px; color: var(--text-muted); line-height: 1.6; }
   .close-btn { background: transparent; border: none; color: var(--text-muted); cursor: pointer; font-size: 16px; }
+  .streak-badge { font-size: 10px; padding: 1px 6px; border-radius: 10px; margin-left: 6px; font-family: 'IBM Plex Mono', monospace; }
+  .streak-badge.up { background: rgba(87,167,118,0.16); color: var(--positive); }
+  .streak-badge.down { background: rgba(196,99,90,0.16); color: var(--negative); }
+  .cumu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+  @media (max-width: 900px) { .cumu-grid, .portfolio-grid { grid-template-columns: 1fr !important; } }
+  .form-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 18px; }
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field label { font-size: 11px; color: var(--text-muted); }
+  .field input, .field select { background: var(--panel-2); border: 1px solid var(--border); color: var(--text); padding: 9px 12px; border-radius: 8px; font-size: 13px; font-family: inherit; min-width: 140px; }
+  .btn-primary { background: var(--copper); color: #1A1208; border: none; padding: 10px 18px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; height: 38px; }
+  .btn-primary:hover { filter: brightness(1.08); }
+  .btn-del { background: transparent; border: 1px solid var(--border); color: var(--negative); border-radius: 6px; padding: 4px 9px; cursor: pointer; font-size: 12px; font-family: inherit; }
+  .portfolio-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
+  @media (max-width: 900px) { .portfolio-summary { grid-template-columns: repeat(2, 1fr); } }
+  .form-error { color: var(--negative); font-size: 12px; margin: -8px 0 14px; }
 </style>
 </head>
 <body>
@@ -110,6 +125,77 @@
     </div>
     <canvas id="symbolTrendChart" height="200"></canvas>
     <div class="empty" id="symbolTrendEmpty" style="display:none;"></div>
+  </div>
+
+  <div class="panel" style="margin-bottom:24px;">
+    <h3>📈 Desempeño acumulado</h3>
+    <div id="cumuEmpty" class="empty" style="display:none;"></div>
+    <div id="cumuContent">
+      <div class="cumu-grid">
+        <div>
+          <div style="font-size:12px; color:var(--text-muted); margin-bottom:8px;">Mayor alza acumulada</div>
+          <div id="cumuGainersList"></div>
+        </div>
+        <div>
+          <div style="font-size:12px; color:var(--text-muted); margin-bottom:8px;">Mayor baja acumulada</div>
+          <div id="cumuLosersList"></div>
+        </div>
+      </div>
+      <div style="font-size:12px; color:var(--text-muted); margin:18px 0 8px;">
+        Evolución normalizada (base 100) de las 5 acciones con mayor variación acumulada — permite comparar tendencias sin importar el precio de cada una.
+      </div>
+      <canvas id="cumuChart" height="220"></canvas>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-bottom:24px;">
+    <h3>💼 Simulador de inversión</h3>
+    <div class="form-row">
+      <div class="field">
+        <label>Acción</label>
+        <select id="pfSymbol"></select>
+      </div>
+      <div class="field">
+        <label>Fecha de compra</label>
+        <select id="pfDate"></select>
+      </div>
+      <div class="field">
+        <label>Monto a invertir (CLP)</label>
+        <input id="pfAmount" type="number" min="1" step="1" placeholder="Ej: 500000" />
+      </div>
+      <button class="btn-primary" id="pfAddBtn">Agregar posición</button>
+    </div>
+    <div id="pfError" class="form-error" style="display:none;"></div>
+
+    <div id="pfEmpty" class="empty">Aún no simulas ninguna inversión. Agrega una posición arriba para empezar a hacerle seguimiento.</div>
+
+    <div id="pfContent" style="display:none;">
+      <div class="portfolio-summary" id="pfSummary"></div>
+      <div class="table-wrap" style="margin-bottom:18px;">
+        <table>
+          <thead>
+            <tr>
+              <th style="text-align:left;">Acción</th>
+              <th>Fecha compra</th>
+              <th>Precio compra</th>
+              <th>Cantidad</th>
+              <th>Invertido</th>
+              <th>Valor actual</th>
+              <th>Retorno</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="pfTableBody"></tbody>
+        </table>
+      </div>
+      <div style="font-size:12px; color:var(--text-muted); margin-bottom:8px;">Valor de la cartera vs. capital invertido en el tiempo</div>
+      <canvas id="pfChart" height="220"></canvas>
+      <div class="empty" id="pfChartEmpty" style="display:none;"></div>
+    </div>
+
+    <div class="mbc-hint" style="font-size:11.5px; color:var(--text-muted); margin-top:14px;">
+      Esto es una simulación con fines de aprendizaje — no ejecuta órdenes reales ni mueve dinero. Los datos se guardan solo en este navegador (localStorage); si cambias de computador o navegador no verás las mismas posiciones.
+    </div>
   </div>
 
   <div class="panel">
@@ -185,6 +271,8 @@ function render() {
   safe(() => renderMovers(snap), "renderMovers");
   safe(() => renderTable(snap), "renderTable");
   safe(() => renderSymbolTrend(), "renderSymbolTrend");
+  safe(() => renderCumulative(), "renderCumulative");
+  safe(() => renderPortfolio(), "renderPortfolio");
 }
 
 function chartLibMissing(canvasId, msg) {
@@ -396,6 +484,293 @@ document.getElementById("dateSelect").addEventListener("change", (e) => {
   currentDate = e.target.value;
   render();
 });
+
+/* ------------------------------------------------------------------ */
+/* Módulo: Desempeño acumulado                                          */
+/* ------------------------------------------------------------------ */
+
+let cumuChart;
+
+function computeStreak(symbol) {
+  const prices = history
+    .map(h => { const s = h.stocks.find(x => x.symbol === symbol); return s ? s.price : null; })
+    .filter(p => p != null);
+  if (prices.length < 2) return 0;
+  let streak = 0;
+  for (let i = prices.length - 1; i > 0; i--) {
+    const dir = Math.sign(prices[i] - prices[i - 1]);
+    if (dir === 0) break;
+    if (streak === 0) streak = dir;
+    else if (Math.sign(streak) === dir) streak += dir;
+    else break;
+  }
+  return streak;
+}
+
+function computeCumulative() {
+  if (history.length < 2) return [];
+  const first = history[0];
+  const last = history[history.length - 1];
+  const firstMap = {};
+  first.stocks.forEach(s => { firstMap[s.symbol] = s.price; });
+  return last.stocks
+    .filter(s => firstMap[s.symbol] != null && firstMap[s.symbol] !== 0)
+    .map(s => ({
+      symbol: s.symbol,
+      firstPrice: firstMap[s.symbol],
+      lastPrice: s.price,
+      cumChange: ((s.price - firstMap[s.symbol]) / firstMap[s.symbol]) * 100,
+      streak: computeStreak(s.symbol),
+    }))
+    .sort((a, b) => b.cumChange - a.cumChange);
+}
+
+function streakBadge(streak) {
+  if (!streak) return "";
+  const dir = streak > 0 ? "up" : "down";
+  const arrow = streak > 0 ? "↑" : "↓";
+  return `<span class="streak-badge ${dir}">${arrow} ${Math.abs(streak)}d</span>`;
+}
+
+function renderCumulative() {
+  const emptyEl = document.getElementById("cumuEmpty");
+  const contentEl = document.getElementById("cumuContent");
+  const ranked = computeCumulative();
+
+  if (ranked.length === 0) {
+    emptyEl.style.display = "block";
+    contentEl.style.display = "none";
+    emptyEl.textContent = `Necesitas al menos 2 días de historial (hoy tienes ${history.length}) para calcular desempeño acumulado y tendencias. Vuelve en unos días.`;
+    return;
+  }
+  emptyEl.style.display = "none";
+  contentEl.style.display = "block";
+
+  const gainers = ranked.slice(0, 8);
+  const losers = [...ranked].reverse().slice(0, 8);
+
+  const rowHtml = (s) => `
+    <div class="mover-row" onclick="selectSymbol('${s.symbol}')">
+      <span class="mono">${s.symbol} ${streakBadge(s.streak)}</span>
+      <span class="pill ${s.cumChange >= 0 ? 'pos' : 'neg'}">${fmtPct(s.cumChange)}</span>
+    </div>`;
+  document.getElementById("cumuGainersList").innerHTML = gainers.map(rowHtml).join("");
+  document.getElementById("cumuLosersList").innerHTML = losers.map(rowHtml).join("");
+
+  if (chartLibMissing("cumuChart")) return;
+  const top5 = ranked.slice(0, 5);
+  const datasets = top5.map((s, i) => {
+    const palette = ["#C08552", "#57A776", "#8AA6D9", "#C4635A", "#D9B36E"];
+    const series = history.map(h => {
+      const stock = h.stocks.find(x => x.symbol === s.symbol);
+      if (!stock) return null;
+      return Number(((stock.price / s.firstPrice) * 100).toFixed(2));
+    });
+    return { label: s.symbol, data: series, borderColor: palette[i], backgroundColor: palette[i], tension: 0.3, spanGaps: true };
+  });
+  if (cumuChart) cumuChart.destroy();
+  cumuChart = new Chart(document.getElementById("cumuChart"), {
+    type: "line",
+    data: { labels: history.map(h => fmtDate(h.date)), datasets },
+    options: {
+      plugins: {
+        legend: { labels: { color: "#ECE7DA", font: { size: 11 } } },
+        tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${c.raw}` } },
+      },
+      scales: {
+        x: { ticks: { color: "#8B93AC" }, grid: { color: "#2B3559" } },
+        y: { ticks: { color: "#8B93AC" }, grid: { color: "#2B3559" } },
+      },
+    },
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/* Módulo: Simulador de inversión                                       */
+/* ------------------------------------------------------------------ */
+
+const PF_KEY = "chile_dashboard_portfolio_v1";
+let pfChart;
+
+function loadPortfolio() {
+  try {
+    const raw = localStorage.getItem(PF_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+function savePortfolio(positions) {
+  try { localStorage.setItem(PF_KEY, JSON.stringify(positions)); } catch { /* localStorage no disponible */ }
+}
+
+function priceAt(symbol, date) {
+  const snap = history.find(h => h.date === date);
+  if (!snap) return null;
+  const s = snap.stocks.find(x => x.symbol === symbol);
+  return s ? s.price : null;
+}
+
+function latestPrice(symbol) {
+  for (let i = history.length - 1; i >= 0; i--) {
+    const s = history[i].stocks.find(x => x.symbol === symbol);
+    if (s) return s.price;
+  }
+  return null;
+}
+
+function populatePortfolioForm() {
+  const snap = currentSnapshot();
+  if (!snap) return;
+  const symSel = document.getElementById("pfSymbol");
+  symSel.innerHTML = snap.stocks
+    .slice().sort((a, b) => a.symbol.localeCompare(b.symbol))
+    .map(s => `<option value="${s.symbol}">${s.symbol}</option>`).join("");
+
+  const dateSel = document.getElementById("pfDate");
+  dateSel.innerHTML = history.slice().reverse()
+    .map(h => `<option value="${h.date}">${fmtDate(h.date)}</option>`).join("");
+}
+
+function handleAddPosition() {
+  const errorEl = document.getElementById("pfError");
+  errorEl.style.display = "none";
+  const symbol = document.getElementById("pfSymbol").value;
+  const date = document.getElementById("pfDate").value;
+  const amount = parseFloat(document.getElementById("pfAmount").value);
+
+  if (!symbol || !date || !amount || amount <= 0) {
+    errorEl.textContent = "Completa la acción, la fecha y un monto válido mayor a 0.";
+    errorEl.style.display = "block";
+    return;
+  }
+  const price = priceAt(symbol, date);
+  if (!price) {
+    errorEl.textContent = `No hay precio registrado para ${symbol} en esa fecha.`;
+    errorEl.style.display = "block";
+    return;
+  }
+  const positions = loadPortfolio();
+  positions.push({
+    id: Date.now(),
+    symbol, buyDate: date, buyPrice: price,
+    quantity: amount / price, investedAmount: amount,
+  });
+  savePortfolio(positions);
+  document.getElementById("pfAmount").value = "";
+  renderPortfolio();
+}
+
+function removePosition(id) {
+  const positions = loadPortfolio().filter(p => p.id !== id);
+  savePortfolio(positions);
+  renderPortfolio();
+}
+window.removePosition = removePosition;
+
+function renderPortfolio() {
+  populatePortfolioForm();
+  const positions = loadPortfolio();
+  const emptyEl = document.getElementById("pfEmpty");
+  const contentEl = document.getElementById("pfContent");
+
+  if (positions.length === 0) {
+    emptyEl.style.display = "block";
+    contentEl.style.display = "none";
+    return;
+  }
+  emptyEl.style.display = "none";
+  contentEl.style.display = "block";
+
+  const rows = positions.map(p => {
+    const current = latestPrice(p.symbol);
+    const currentValue = current != null ? current * p.quantity : null;
+    const gain = currentValue != null ? currentValue - p.investedAmount : null;
+    const gainPct = gain != null ? (gain / p.investedAmount) * 100 : null;
+    return { ...p, current, currentValue, gain, gainPct };
+  });
+
+  const totalInvested = rows.reduce((a, r) => a + r.investedAmount, 0);
+  const totalCurrent = rows.reduce((a, r) => a + (r.currentValue ?? r.investedAmount), 0);
+  const totalGain = totalCurrent - totalInvested;
+  const totalGainPct = totalInvested ? (totalGain / totalInvested) * 100 : 0;
+
+  document.getElementById("pfSummary").innerHTML = `
+    <div class="kpi"><div class="kpi-label">Capital invertido</div><div class="kpi-value">$${fmtCLP(totalInvested)}</div></div>
+    <div class="kpi"><div class="kpi-label">Valor actual</div><div class="kpi-value">$${fmtCLP(totalCurrent)}</div></div>
+    <div class="kpi"><div class="kpi-label">Ganancia / pérdida</div><div class="kpi-value" style="color:${totalGain>=0?'var(--positive)':'var(--negative)'}">$${fmtCLP(totalGain)}</div></div>
+    <div class="kpi"><div class="kpi-label">Retorno total</div><div class="kpi-value" style="color:${totalGainPct>=0?'var(--positive)':'var(--negative)'}">${fmtPct(totalGainPct)}</div></div>
+  `;
+
+  document.getElementById("pfTableBody").innerHTML = rows.map(r => `
+    <tr>
+      <td class="mono" style="text-align:left; font-weight:600;">${r.symbol}</td>
+      <td>${fmtDate(r.buyDate)}</td>
+      <td>${fmtCLP(r.buyPrice)}</td>
+      <td>${r.quantity.toLocaleString("es-CL", {maximumFractionDigits:2})}</td>
+      <td>$${fmtCLP(r.investedAmount)}</td>
+      <td>${r.currentValue != null ? "$" + fmtCLP(r.currentValue) : "—"}</td>
+      <td style="color:${(r.gainPct ?? 0) >= 0 ? 'var(--positive)' : 'var(--negative)'}">${r.gainPct != null ? fmtPct(r.gainPct) : "—"}</td>
+      <td><button class="btn-del" onclick="removePosition(${r.id})">✕</button></td>
+    </tr>
+  `).join("");
+
+  renderPortfolioChart(rows);
+}
+
+function renderPortfolioChart(rows) {
+  const canvas = document.getElementById("pfChart");
+  const emptyEl = document.getElementById("pfChartEmpty");
+  const earliestBuy = rows.reduce((min, r) => r.buyDate < min ? r.buyDate : min, rows[0].buyDate);
+  const relevantDates = history.filter(h => h.date >= earliestBuy);
+
+  if (relevantDates.length < 2) {
+    canvas.style.display = "none";
+    emptyEl.style.display = "block";
+    emptyEl.textContent = "Necesitas al menos 2 días de historial desde tu primera compra para ver la evolución de la cartera.";
+    return;
+  }
+  canvas.style.display = "block";
+  emptyEl.style.display = "none";
+  if (chartLibMissing("pfChart")) return;
+
+  const valueSeries = [];
+  const investedSeries = [];
+  relevantDates.forEach(h => {
+    let value = 0, invested = 0;
+    rows.forEach(r => {
+      if (r.buyDate > h.date) return;
+      invested += r.investedAmount;
+      const stock = h.stocks.find(x => x.symbol === r.symbol);
+      value += stock ? stock.price * r.quantity : r.investedAmount;
+    });
+    valueSeries.push(Number(value.toFixed(0)));
+    investedSeries.push(Number(invested.toFixed(0)));
+  });
+
+  if (pfChart) pfChart.destroy();
+  pfChart = new Chart(canvas, {
+    type: "line",
+    data: {
+      labels: relevantDates.map(h => fmtDate(h.date)),
+      datasets: [
+        { label: "Valor cartera", data: valueSeries, borderColor: "#57A776", backgroundColor: "#57A776", tension: 0.3 },
+        { label: "Capital invertido", data: investedSeries, borderColor: "#8B93AC", backgroundColor: "#8B93AC", borderDash: [4, 4], tension: 0.3 },
+      ],
+    },
+    options: {
+      plugins: {
+        legend: { labels: { color: "#ECE7DA", font: { size: 11 } } },
+        tooltip: { callbacks: { label: (c) => `${c.dataset.label}: $${fmtCLP(c.raw)}` } },
+      },
+      scales: {
+        x: { ticks: { color: "#8B93AC" }, grid: { color: "#2B3559" } },
+        y: { ticks: { color: "#8B93AC", callback: (v) => "$" + fmtCLP(v) }, grid: { color: "#2B3559" } },
+      },
+    },
+  });
+}
+
+document.getElementById("pfAddBtn").addEventListener("click", handleAddPosition);
 
 async function init() {
   try {

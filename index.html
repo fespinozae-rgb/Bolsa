@@ -89,15 +89,47 @@
     </div>
   </header>
 
+  <div class="panel" style="margin-bottom:24px;">
+    <div class="form-row" style="margin-bottom:0;">
+      <div class="field">
+        <label>Vista</label>
+        <div class="tabs" id="modeTabs">
+          <button class="tab active" data-mode="daily">Diario</button>
+          <button class="tab" data-mode="cumulative">Acumulado</button>
+        </div>
+      </div>
+      <div class="field" id="periodField" style="display:none;">
+        <label>Período</label>
+        <div class="tabs" id="periodTabs">
+          <button class="tab" data-period="weekly">Semanal</button>
+          <button class="tab" data-period="monthly">Mensual</button>
+          <button class="tab" data-period="quarterly">Trimestral</button>
+          <button class="tab" data-period="semiannual">Semestral</button>
+          <button class="tab" data-period="annual">Anual</button>
+          <button class="tab active" data-period="custom">Personalizado</button>
+        </div>
+      </div>
+      <div class="field" id="rangeStartField" style="display:none;">
+        <label>Desde</label>
+        <select id="rangeStart"></select>
+      </div>
+      <div class="field" id="rangeEndField" style="display:none;">
+        <label>Hasta</label>
+        <select id="rangeEnd"></select>
+      </div>
+    </div>
+    <div id="rangeInfo" style="font-size:11.5px; color:var(--text-muted); margin-top:10px;"></div>
+  </div>
+
   <div class="kpis" id="kpis"></div>
 
   <div class="grid-2">
     <div class="panel">
-      <h3>Rendimiento por sector</h3>
+      <h3 id="sectorTitle">Rendimiento por sector</h3>
       <canvas id="sectorChart" height="220"></canvas>
     </div>
     <div class="panel">
-      <h3>Evolución del mercado</h3>
+      <h3 id="marketTitle">Evolución del mercado</h3>
       <canvas id="marketTrendChart" height="220"></canvas>
       <div class="empty" id="marketTrendEmpty" style="display:none;"></div>
     </div>
@@ -105,15 +137,15 @@
 
   <div class="movers">
     <div class="panel">
-      <h3>↑ Mayores alzas</h3>
+      <h3 id="gainersTitle">↑ Mayores alzas</h3>
       <div id="gainersList"></div>
     </div>
     <div class="panel">
-      <h3>↓ Mayores bajas</h3>
+      <h3 id="losersTitle">↓ Mayores bajas</h3>
       <div id="losersList"></div>
     </div>
     <div class="panel">
-      <h3>◆ Más activas</h3>
+      <h3 id="activeTitle">◆ Más activas</h3>
       <div id="activeList"></div>
     </div>
   </div>
@@ -125,37 +157,6 @@
     </div>
     <canvas id="symbolTrendChart" height="200"></canvas>
     <div class="empty" id="symbolTrendEmpty" style="display:none;"></div>
-  </div>
-
-  <div class="panel" style="margin-bottom:24px;">
-    <h3>📈 Desempeño acumulado</h3>
-    <div class="form-row" style="margin-bottom:14px;">
-      <div class="field">
-        <label>Desde</label>
-        <select id="cumuStart"></select>
-      </div>
-      <div class="field">
-        <label>Hasta</label>
-        <select id="cumuEnd"></select>
-      </div>
-    </div>
-    <div id="cumuEmpty" class="empty" style="display:none;"></div>
-    <div id="cumuContent">
-      <div class="cumu-grid">
-        <div>
-          <div style="font-size:12px; color:var(--text-muted); margin-bottom:8px;">Mayor alza acumulada</div>
-          <div id="cumuGainersList"></div>
-        </div>
-        <div>
-          <div style="font-size:12px; color:var(--text-muted); margin-bottom:8px;">Mayor baja acumulada</div>
-          <div id="cumuLosersList"></div>
-        </div>
-      </div>
-      <div style="font-size:12px; color:var(--text-muted); margin:18px 0 8px;">
-        Evolución normalizada (base 100) de las 5 acciones con mayor variación acumulada — permite comparar tendencias sin importar el precio de cada una.
-      </div>
-      <canvas id="cumuChart" height="220"></canvas>
-    </div>
   </div>
 
   <div class="panel" style="margin-bottom:24px;">
@@ -226,8 +227,8 @@
           <tr>
             <th data-key="symbol">Símbolo</th>
             <th data-key="price">Precio</th>
-            <th data-key="change">Variación %</th>
-            <th data-key="volume">Volumen</th>
+            <th data-key="change" id="changeHeaderLabel">Variación %</th>
+            <th data-key="volume" id="volumeHeaderLabel">Volumen</th>
           </tr>
         </thead>
         <tbody id="tableBody"></tbody>
@@ -251,6 +252,32 @@ let searchTerm = "";
 let selectedSymbol = null;
 let sectorChart, marketTrendChart, symbolTrendChart;
 
+// Vista: 'daily' (variación del día) o 'cumulative' (rendimiento acumulado en un período)
+let viewMode = "daily";
+let period = "custom"; // 'weekly'|'monthly'|'quarterly'|'semiannual'|'annual'|'custom'
+let rangeStartDate = null;
+let rangeEndDate = null;
+
+const PERIOD_DAYS = { weekly: 7, monthly: 30, quarterly: 91, semiannual: 182, annual: 365 };
+const PERIOD_LABELS = { weekly: "Semanal", monthly: "Mensual", quarterly: "Trimestral", semiannual: "Semestral", annual: "Anual", custom: "Personalizado" };
+
+// Sector de cada símbolo (espejo de SECTORS en scripts/fetch_data.py) — necesario
+// en el navegador para poder calcular el rendimiento por sector en cualquier rango.
+const SECTORS = {
+  "AGUAS-A": "Servicios Públicos", "ANTARCHILE": "Holdings e Inversiones",
+  "BSANTANDER": "Banca y Finanzas", "CAP": "Industria y Materiales",
+  "CCU": "Consumo Básico", "CENCOMALLS": "Inmobiliario y Construcción",
+  "CENCOSUD": "Retail", "CHILE": "Banca y Finanzas", "CMPC": "Industria y Materiales",
+  "COLBUN": "Energía", "COPEC": "Energía", "ECL": "Energía",
+  "ENELAM": "Energía", "ENELCHILE": "Energía", "ENTEL": "Telecomunicaciones y Tecnología",
+  "FALABELLA": "Retail", "IAM": "Servicios Públicos", "ILC": "Salud",
+  "ITAUCL": "Banca y Finanzas", "MALLPLAZA": "Inmobiliario y Construcción",
+  "PARAUCO": "Inmobiliario y Construcción", "QUINENCO": "Holdings e Inversiones",
+  "RIPLEY": "Retail", "SALFACORP": "Inmobiliario y Construcción", "SMU": "Retail",
+  "SONDA": "Telecomunicaciones y Tecnología", "SQM-B": "Industria y Materiales",
+  "VAPORES": "Transporte",
+};
+
 const fmtCLP = (n) => n == null ? "—" : n.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtPct = (n) => n == null ? "—" : (n > 0 ? "+" : "") + n.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + "%";
 const fmtDate = (d) => new Date(d + "T12:00:00").toLocaleDateString("es-CL", { day: "2-digit", month: "short", year: "numeric" });
@@ -266,6 +293,113 @@ function currentSnapshot() {
   return history.find(h => h.date === currentDate) || history[history.length - 1];
 }
 
+/* ------------------------------------------------------------------ */
+/* Rango activo (para el modo Acumulado)                                */
+/* ------------------------------------------------------------------ */
+
+function computeActiveRange() {
+  if (history.length === 0) return null;
+  const endDate = (rangeEndDate && history.some(h => h.date === rangeEndDate))
+    ? rangeEndDate : history[history.length - 1].date;
+
+  let startDate;
+  if (period === "custom") {
+    startDate = (rangeStartDate && history.some(h => h.date === rangeStartDate))
+      ? rangeStartDate : history[0].date;
+  } else {
+    const days = PERIOD_DAYS[period];
+    const endObj = new Date(endDate + "T12:00:00");
+    const targetObj = new Date(endObj.getTime() - days * 24 * 60 * 60 * 1000);
+    const target = targetObj.toISOString().slice(0, 10);
+    const candidate = history.find(h => h.date >= target && h.date <= endDate);
+    startDate = candidate ? candidate.date : history[0].date;
+  }
+  if (startDate > endDate) startDate = endDate;
+  const rangeHistory = history.filter(h => h.date >= startDate && h.date <= endDate);
+  return { startDate, endDate, rangeHistory };
+}
+
+function computeCumulativeMap(rangeHistory) {
+  const map = {};
+  if (rangeHistory.length < 2) return map;
+  const first = rangeHistory[0];
+  const last = rangeHistory[rangeHistory.length - 1];
+  const firstMap = {};
+  first.stocks.forEach(s => { firstMap[s.symbol] = s.price; });
+  last.stocks.forEach(s => {
+    const fp = firstMap[s.symbol];
+    if (fp != null && fp !== 0) {
+      map[s.symbol] = { firstPrice: fp, lastPrice: s.price, cumChange: ((s.price - fp) / fp) * 100 };
+    }
+  });
+  return map;
+}
+
+function computeStreak(symbol, rangeHistory) {
+  const prices = rangeHistory
+    .map(h => { const s = h.stocks.find(x => x.symbol === symbol); return s ? s.price : null; })
+    .filter(p => p != null);
+  if (prices.length < 2) return 0;
+  let streak = 0;
+  for (let i = prices.length - 1; i > 0; i--) {
+    const dir = Math.sign(prices[i] - prices[i - 1]);
+    if (dir === 0) break;
+    if (streak === 0) streak = dir;
+    else if (Math.sign(streak) === dir) streak += dir;
+    else break;
+  }
+  return streak;
+}
+
+function streakBadge(streak) {
+  if (!streak) return "";
+  const dir = streak > 0 ? "up" : "down";
+  const arrow = streak > 0 ? "↑" : "↓";
+  return `<span class="streak-badge ${dir}">${arrow} ${Math.abs(streak)}d</span>`;
+}
+
+// Lista de acciones "para mostrar": en modo diario usa la variación del día tal cual;
+// en modo acumulado recalcula % y volumen según el rango activo, conservando el
+// mismo formato {symbol, price, change, volume, streak}.
+function getDisplayStocks(snap) {
+  if (viewMode === "daily") {
+    return snap.stocks.map(s => ({
+      symbol: s.symbol, price: s.price, change: s.change, volume: s.volume,
+      streak: computeStreak(s.symbol, history),
+    }));
+  }
+  const active = computeActiveRange();
+  if (!active) return [];
+  const cmap = computeCumulativeMap(active.rangeHistory);
+  const volSum = {};
+  active.rangeHistory.forEach(h => h.stocks.forEach(s => {
+    if (s.volume != null) volSum[s.symbol] = (volSum[s.symbol] || 0) + s.volume;
+  }));
+  return snap.stocks.map(s => {
+    const c = cmap[s.symbol];
+    return {
+      symbol: s.symbol, price: s.price,
+      change: c ? c.cumChange : null,
+      volume: volSum[s.symbol] ?? null,
+      streak: computeStreak(s.symbol, active.rangeHistory),
+    };
+  });
+}
+
+function getDisplaySectors(snap) {
+  if (viewMode === "daily") return snap.sectors;
+  const displayStocks = getDisplayStocks(snap).filter(s => s.change != null);
+  const buckets = {};
+  displayStocks.forEach(s => {
+    const sector = SECTORS[s.symbol];
+    if (!sector) return;
+    (buckets[sector] = buckets[sector] || []).push(s.change);
+  });
+  return Object.entries(buckets).map(([name, vals]) => ({
+    name, change: Number((vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2)),
+  }));
+}
+
 function render() {
   const snap = currentSnapshot();
   if (!snap) return;
@@ -275,13 +409,13 @@ function render() {
   const safe = (fn, label) => {
     try { fn(); } catch (err) { console.error(`Error en ${label}:`, err); }
   };
+  safe(() => renderControlBar(), "renderControlBar");
   safe(() => renderKpis(snap), "renderKpis");
   safe(() => renderSectorChart(snap), "renderSectorChart");
   safe(() => renderMarketTrend(), "renderMarketTrend");
   safe(() => renderMovers(snap), "renderMovers");
   safe(() => renderTable(snap), "renderTable");
   safe(() => renderSymbolTrend(), "renderSymbolTrend");
-  safe(() => renderCumulative(), "renderCumulative");
   safe(() => renderPortfolio(), "renderPortfolio");
 }
 
@@ -298,25 +432,71 @@ function chartLibMissing(canvasId, msg) {
   return false;
 }
 
+function populateRangeSelectors() {
+  if (history.length === 0) return;
+  const startSel = document.getElementById("rangeStart");
+  const endSel = document.getElementById("rangeEnd");
+  const optionsHtml = history.map(h => `<option value="${h.date}">${fmtDate(h.date)}</option>`).join("");
+  startSel.innerHTML = optionsHtml;
+  endSel.innerHTML = optionsHtml;
+
+  if (!rangeStartDate) {
+    const preferred = "2026-09-01";
+    const candidate = history.find(h => h.date >= preferred);
+    rangeStartDate = candidate ? candidate.date : history[0].date;
+  }
+  if (!rangeEndDate) rangeEndDate = history[history.length - 1].date;
+  if (!history.some(h => h.date === rangeStartDate)) rangeStartDate = history[0].date;
+  if (!history.some(h => h.date === rangeEndDate)) rangeEndDate = history[history.length - 1].date;
+
+  startSel.value = rangeStartDate;
+  endSel.value = rangeEndDate;
+}
+
+function renderControlBar() {
+  const periodField = document.getElementById("periodField");
+  const startField = document.getElementById("rangeStartField");
+  const endField = document.getElementById("rangeEndField");
+  const info = document.getElementById("rangeInfo");
+
+  const isCumulative = viewMode === "cumulative";
+  periodField.style.display = isCumulative ? "flex" : "none";
+  endField.style.display = isCumulative ? "flex" : "none";
+  startField.style.display = (isCumulative && period === "custom") ? "flex" : "none";
+
+  if (!isCumulative) { info.textContent = ""; return; }
+
+  populateRangeSelectors();
+  const active = computeActiveRange();
+  if (!active) { info.textContent = ""; return; }
+  info.textContent = `Mostrando rendimiento acumulado entre ${fmtDate(active.startDate)} y ${fmtDate(active.endDate)} ` +
+    `(${active.rangeHistory.length} captura${active.rangeHistory.length === 1 ? "" : "s"} en el rango).`;
+}
+
 function renderKpis(snap) {
+  const displayStocks = getDisplayStocks(snap);
+  const valid = displayStocks.filter(s => s.change != null);
   const total = snap.stocks.length;
-  const gainers = snap.stocks.filter(s => s.change > 0).length;
-  const losers = snap.stocks.filter(s => s.change < 0).length;
-  const flat = total - gainers - losers;
-  const avg = snap.stocks.reduce((a, s) => a + (s.change || 0), 0) / total;
+  const gainers = valid.filter(s => s.change > 0).length;
+  const losers = valid.filter(s => s.change < 0).length;
+  const flat = valid.filter(s => s.change === 0).length;
+  const avg = valid.length ? valid.reduce((a, s) => a + s.change, 0) / valid.length : 0;
+  const avgLabel = viewMode === "cumulative" ? `Retorno acumulado (${PERIOD_LABELS[period]})` : "Variación promedio";
   const el = document.getElementById("kpis");
   el.innerHTML = `
     <div class="kpi"><div class="kpi-label">Instrumentos</div><div class="kpi-value">${total}</div></div>
     <div class="kpi"><div class="kpi-label">En alza</div><div class="kpi-value" style="color:var(--positive)">${gainers}</div></div>
     <div class="kpi"><div class="kpi-label">En baja</div><div class="kpi-value" style="color:var(--negative)">${losers}</div></div>
     <div class="kpi"><div class="kpi-label">Sin cambio</div><div class="kpi-value" style="color:var(--flat)">${flat}</div></div>
-    <div class="kpi"><div class="kpi-label">Variación promedio</div><div class="kpi-value" style="color:${avg>=0?'var(--positive)':'var(--negative)'}">${fmtPct(avg)}</div></div>
+    <div class="kpi"><div class="kpi-label">${avgLabel}</div><div class="kpi-value" style="color:${avg>=0?'var(--positive)':'var(--negative)'}">${fmtPct(avg)}</div></div>
   `;
 }
 
 function renderSectorChart(snap) {
+  document.getElementById("sectorTitle").textContent = viewMode === "cumulative"
+    ? `Rendimiento por sector (${PERIOD_LABELS[period]})` : "Rendimiento por sector";
   if (chartLibMissing("sectorChart")) return;
-  const sorted = [...snap.sectors].sort((a, b) => b.change - a.change);
+  const sorted = [...getDisplaySectors(snap)].sort((a, b) => b.change - a.change);
   if (sectorChart) sectorChart.destroy();
   sectorChart = new Chart(document.getElementById("sectorChart"), {
     type: "bar",
@@ -342,28 +522,90 @@ function renderSectorChart(snap) {
 function renderMarketTrend() {
   const empty = document.getElementById("marketTrendEmpty");
   const canvas = document.getElementById("marketTrendChart");
-  if (history.length < 2) {
+  document.getElementById("marketTitle").textContent = viewMode === "cumulative"
+    ? `Evolución del mercado — acumulado (${PERIOD_LABELS[period]})` : "Evolución del mercado";
+
+  if (viewMode === "daily") {
+    if (history.length < 2) {
+      canvas.style.display = "none";
+      empty.style.display = "block";
+      empty.textContent = `Solo hay una captura guardada (${fmtDate(history[0]?.date)}). Vuelve mañana para ver la tendencia.`;
+      return;
+    }
+    canvas.style.display = "block";
+    empty.style.display = "none";
+    if (chartLibMissing("marketTrendChart")) return;
+    const points = history.map(h => ({
+      date: h.date,
+      avg: h.stocks.reduce((a, s) => a + (s.change || 0), 0) / h.stocks.length,
+    }));
+    if (marketTrendChart) marketTrendChart.destroy();
+    marketTrendChart = new Chart(canvas, {
+      type: "line",
+      data: {
+        labels: points.map(p => fmtDate(p.date)),
+        datasets: [{ label: "Promedio diario", data: points.map(p => p.avg.toFixed(2)), borderColor: "#C08552", backgroundColor: "#C08552", tension: 0.3 }],
+      },
+      options: {
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${c.raw}%` } } },
+        scales: {
+          x: { ticks: { color: "#8B93AC" }, grid: { color: "#2B3559" } },
+          y: { ticks: { color: "#8B93AC", callback: (v) => v + "%" }, grid: { color: "#2B3559" } },
+        },
+      },
+    });
+    return;
+  }
+
+  // Modo acumulado: índice promedio del mercado + las 5 acciones con mayor variación
+  const active = computeActiveRange();
+  if (!active || active.rangeHistory.length < 2) {
     canvas.style.display = "none";
     empty.style.display = "block";
-    empty.textContent = `Solo hay una captura guardada (${fmtDate(history[0]?.date)}). Vuelve mañana para ver la tendencia.`;
+    empty.textContent = "Elige un rango con al menos 2 capturas para ver la evolución acumulada.";
     return;
   }
   canvas.style.display = "block";
   empty.style.display = "none";
   if (chartLibMissing("marketTrendChart")) return;
-  const points = history.map(h => ({
-    date: h.date,
-    avg: h.stocks.reduce((a, s) => a + (s.change || 0), 0) / h.stocks.length,
+
+  const cmap = computeCumulativeMap(active.rangeHistory);
+  const symbols = Object.keys(cmap);
+  const indexSeries = active.rangeHistory.map(h => {
+    const vals = symbols.map(sym => {
+      const stock = h.stocks.find(x => x.symbol === sym);
+      if (!stock) return null;
+      return ((stock.price - cmap[sym].firstPrice) / cmap[sym].firstPrice) * 100;
+    }).filter(v => v != null);
+    return vals.length ? Number((vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2)) : null;
+  });
+
+  const top5 = Object.entries(cmap).sort((a, b) => b[1].cumChange - a[1].cumChange).slice(0, 5);
+  const palette = ["#57A776", "#8AA6D9", "#D9B36E", "#C4635A", "#A98FD2"];
+  const extraDatasets = top5.map(([sym, info], i) => ({
+    label: sym,
+    data: active.rangeHistory.map(h => {
+      const stock = h.stocks.find(x => x.symbol === sym);
+      return stock ? Number((((stock.price - info.firstPrice) / info.firstPrice) * 100).toFixed(2)) : null;
+    }),
+    borderColor: palette[i], backgroundColor: palette[i], borderWidth: 1, tension: 0.3, spanGaps: true,
   }));
+
   if (marketTrendChart) marketTrendChart.destroy();
   marketTrendChart = new Chart(canvas, {
     type: "line",
     data: {
-      labels: points.map(p => fmtDate(p.date)),
-      datasets: [{ data: points.map(p => p.avg.toFixed(2)), borderColor: "#C08552", backgroundColor: "#C08552", tension: 0.3 }],
+      labels: active.rangeHistory.map(h => fmtDate(h.date)),
+      datasets: [
+        { label: "Promedio mercado", data: indexSeries, borderColor: "#C08552", backgroundColor: "#C08552", borderWidth: 3, tension: 0.3 },
+        ...extraDatasets,
+      ],
     },
     options: {
-      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${c.raw}%` } } },
+      plugins: {
+        legend: { labels: { color: "#ECE7DA", font: { size: 11 } } },
+        tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${c.raw}%` } },
+      },
       scales: {
         x: { ticks: { color: "#8B93AC" }, grid: { color: "#2B3559" } },
         y: { ticks: { color: "#8B93AC", callback: (v) => v + "%" }, grid: { color: "#2B3559" } },
@@ -373,12 +615,17 @@ function renderMarketTrend() {
 }
 
 function renderMovers(snap) {
-  const withVol = snap.stocks;
-  const gainers = [...withVol].filter(s => s.change != null).sort((a, b) => b.change - a.change).slice(0, 6);
-  const losers = [...withVol].filter(s => s.change != null).sort((a, b) => a.change - b.change).slice(0, 6);
-  const active = [...withVol].filter(s => s.volume).sort((a, b) => b.volume - a.volume).slice(0, 6);
+  const displayStocks = getDisplayStocks(snap);
+  const gainers = [...displayStocks].filter(s => s.change != null).sort((a, b) => b.change - a.change).slice(0, 6);
+  const losers = [...displayStocks].filter(s => s.change != null).sort((a, b) => a.change - b.change).slice(0, 6);
+  const active = [...displayStocks].filter(s => s.volume).sort((a, b) => b.volume - a.volume).slice(0, 6);
 
-  const rowHtml = (s, valueHtml) => `<div class="mover-row" onclick="selectSymbol('${s.symbol}')"><span class="mono">${s.symbol}</span>${valueHtml}</div>`;
+  const isCumulative = viewMode === "cumulative";
+  document.getElementById("gainersTitle").textContent = isCumulative ? `↑ Mayores alzas (${PERIOD_LABELS[period]})` : "↑ Mayores alzas";
+  document.getElementById("losersTitle").textContent = isCumulative ? `↓ Mayores bajas (${PERIOD_LABELS[period]})` : "↓ Mayores bajas";
+  document.getElementById("activeTitle").textContent = isCumulative ? `◆ Más activas (volumen ${PERIOD_LABELS[period].toLowerCase()})` : "◆ Más activas";
+
+  const rowHtml = (s, valueHtml) => `<div class="mover-row" onclick="selectSymbol('${s.symbol}')"><span class="mono">${s.symbol}${streakBadge(s.streak)}</span>${valueHtml}</div>`;
 
   document.getElementById("gainersList").innerHTML = gainers.map(s => rowHtml(s, `<span class="pill pos">${fmtPct(s.change)}</span>`)).join("");
   document.getElementById("losersList").innerHTML = losers.map(s => rowHtml(s, `<span class="pill neg">${fmtPct(s.change)}</span>`)).join("");
@@ -386,7 +633,7 @@ function renderMovers(snap) {
 }
 
 function renderTable(snap) {
-  let list = snap.stocks.slice();
+  let list = getDisplayStocks(snap);
   if (searchTerm) list = list.filter(s => s.symbol.toUpperCase().includes(searchTerm.toUpperCase()));
   if (filterTab === "gainers") list = list.filter(s => s.change > 0);
   else if (filterTab === "losers") list = list.filter(s => s.change < 0);
@@ -400,16 +647,20 @@ function renderTable(snap) {
     return sortDir === "asc" ? av - bv : bv - av;
   });
 
+  const isCumulative = viewMode === "cumulative";
+  document.getElementById("changeHeaderLabel").textContent = isCumulative ? `Var. ${PERIOD_LABELS[period]}` : "Variación %";
+  document.getElementById("volumeHeaderLabel").textContent = isCumulative ? "Volumen (período)" : "Volumen";
+
   const body = document.getElementById("tableBody");
   if (list.length === 0) {
-    body.innerHTML = `<tr><td colspan="4" class="empty">No hay acciones que coincidan con el filtro.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="4" class="empty">No hay acciones que coincidan con el filtro${isCumulative ? " o sin datos suficientes en el rango elegido" : ""}.</td></tr>`;
     return;
   }
   body.innerHTML = list.map(s => `
     <tr onclick="selectSymbol('${s.symbol}')">
-      <td class="mono" style="text-align:left; font-weight:600;">${s.symbol}</td>
+      <td class="mono" style="text-align:left; font-weight:600;">${s.symbol}${streakBadge(s.streak)}</td>
       <td>${fmtCLP(s.price)}</td>
-      <td style="color:${s.change > 0 ? 'var(--positive)' : s.change < 0 ? 'var(--negative)' : 'var(--flat)'}">${fmtPct(s.change)}</td>
+      <td style="color:${(s.change ?? 0) > 0 ? 'var(--positive)' : (s.change ?? 0) < 0 ? 'var(--negative)' : 'var(--flat)'}">${s.change != null ? fmtPct(s.change) : "—"}</td>
       <td style="color:var(--text-muted)">${fmtVol(s.volume)}</td>
     </tr>
   `).join("");
@@ -418,7 +669,6 @@ function renderTable(snap) {
 function selectSymbol(sym) {
   selectedSymbol = sym;
   document.getElementById("trendPanel").style.display = "block";
-  document.getElementById("trendTitle").textContent = "Tendencia — " + sym;
   renderSymbolTrend();
   document.getElementById("trendPanel").scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
@@ -429,17 +679,58 @@ function renderSymbolTrend() {
   const empty = document.getElementById("symbolTrendEmpty");
   if (!selectedSymbol) { document.getElementById("trendPanel").style.display = "none"; return; }
 
-  const points = history
-    .map(h => {
-      const stock = h.stocks.find(s => s.symbol === selectedSymbol);
-      return stock ? { date: h.date, price: stock.price } : null;
-    })
-    .filter(Boolean);
+  const isCumulative = viewMode === "cumulative";
+  document.getElementById("trendTitle").textContent = isCumulative
+    ? `Tendencia acumulada (${PERIOD_LABELS[period]}) — ${selectedSymbol}` : `Tendencia — ${selectedSymbol}`;
 
+  if (!isCumulative) {
+    const points = history
+      .map(h => { const s = h.stocks.find(x => x.symbol === selectedSymbol); return s ? { date: h.date, price: s.price } : null; })
+      .filter(Boolean);
+    if (points.length < 2) {
+      canvas.style.display = "none";
+      empty.style.display = "block";
+      empty.textContent = `Solo hay un dato para ${selectedSymbol}. Vuelve en unos días para ver su tendencia.`;
+      return;
+    }
+    canvas.style.display = "block";
+    empty.style.display = "none";
+    if (chartLibMissing("symbolTrendChart")) return;
+    if (symbolTrendChart) symbolTrendChart.destroy();
+    symbolTrendChart = new Chart(canvas, {
+      type: "line",
+      data: { labels: points.map(p => fmtDate(p.date)), datasets: [{ data: points.map(p => p.price), borderColor: "#C08552", backgroundColor: "#C08552", tension: 0.3 }] },
+      options: {
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => fmtCLP(c.raw) } } },
+        scales: { x: { ticks: { color: "#8B93AC" }, grid: { color: "#2B3559" } }, y: { ticks: { color: "#8B93AC" }, grid: { color: "#2B3559" } } },
+      },
+    });
+    return;
+  }
+
+  // Modo acumulado: % desde el inicio del rango activo
+  const active = computeActiveRange();
+  if (!active || active.rangeHistory.length < 2) {
+    canvas.style.display = "none";
+    empty.style.display = "block";
+    empty.textContent = "Elige un rango con al menos 2 capturas para ver la tendencia acumulada.";
+    return;
+  }
+  const firstStock = active.rangeHistory[0].stocks.find(s => s.symbol === selectedSymbol);
+  if (!firstStock) {
+    canvas.style.display = "none";
+    empty.style.display = "block";
+    empty.textContent = `No hay precio de ${selectedSymbol} al inicio del rango seleccionado.`;
+    return;
+  }
+  const basePrice = firstStock.price;
+  const points = active.rangeHistory
+    .map(h => { const s = h.stocks.find(x => x.symbol === selectedSymbol); return s ? { date: h.date, pct: Number((((s.price - basePrice) / basePrice) * 100).toFixed(2)) } : null; })
+    .filter(Boolean);
   if (points.length < 2) {
     canvas.style.display = "none";
     empty.style.display = "block";
-    empty.textContent = `Solo hay un dato para ${selectedSymbol}. Vuelve en unos días para ver su tendencia.`;
+    empty.textContent = `No hay suficientes datos de ${selectedSymbol} en ese rango.`;
     return;
   }
   canvas.style.display = "block";
@@ -448,16 +739,10 @@ function renderSymbolTrend() {
   if (symbolTrendChart) symbolTrendChart.destroy();
   symbolTrendChart = new Chart(canvas, {
     type: "line",
-    data: {
-      labels: points.map(p => fmtDate(p.date)),
-      datasets: [{ data: points.map(p => p.price), borderColor: "#C08552", backgroundColor: "#C08552", tension: 0.3 }],
-    },
+    data: { labels: points.map(p => fmtDate(p.date)), datasets: [{ data: points.map(p => p.pct), borderColor: "#57A776", backgroundColor: "#57A776", tension: 0.3 }] },
     options: {
-      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => fmtCLP(c.raw) } } },
-      scales: {
-        x: { ticks: { color: "#8B93AC" }, grid: { color: "#2B3559" } },
-        y: { ticks: { color: "#8B93AC" }, grid: { color: "#2B3559" } },
-      },
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${c.raw}%` } } },
+      scales: { x: { ticks: { color: "#8B93AC" }, grid: { color: "#2B3559" } }, y: { ticks: { color: "#8B93AC", callback: (v) => v + "%" }, grid: { color: "#2B3559" } } },
     },
   });
 }
@@ -472,9 +757,9 @@ document.getElementById("searchInput").addEventListener("input", (e) => {
   render();
 });
 
-document.querySelectorAll(".tab").forEach(btn => {
+document.querySelectorAll("#tabs .tab").forEach(btn => {
   btn.addEventListener("click", () => {
-    document.querySelectorAll(".tab").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll("#tabs .tab").forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
     filterTab = btn.dataset.tab;
     render();
@@ -495,146 +780,31 @@ document.getElementById("dateSelect").addEventListener("change", (e) => {
   render();
 });
 
-/* ------------------------------------------------------------------ */
-/* Módulo: Desempeño acumulado                                          */
-/* ------------------------------------------------------------------ */
-
-let cumuChart;
-let cumuStartDate = null;
-let cumuEndDate = null;
-
-function populateCumuRangeSelectors() {
-  if (history.length === 0) return;
-  const startSel = document.getElementById("cumuStart");
-  const endSel = document.getElementById("cumuEnd");
-  const optionsHtml = history.map(h => `<option value="${h.date}">${fmtDate(h.date)}</option>`).join("");
-  startSel.innerHTML = optionsHtml;
-  endSel.innerHTML = optionsHtml;
-
-  if (!cumuStartDate) {
-    // Por defecto: 1 de septiembre (o la fecha disponible más cercana en adelante)
-    const preferred = "2026-09-01";
-    const candidate = history.find(h => h.date >= preferred);
-    cumuStartDate = candidate ? candidate.date : history[0].date;
-  }
-  if (!cumuEndDate) cumuEndDate = history[history.length - 1].date;
-
-  // Si alguna fecha guardada ya no existe en el historial, cae al extremo más cercano
-  if (!history.some(h => h.date === cumuStartDate)) cumuStartDate = history[0].date;
-  if (!history.some(h => h.date === cumuEndDate)) cumuEndDate = history[history.length - 1].date;
-
-  startSel.value = cumuStartDate;
-  endSel.value = cumuEndDate;
-}
-
-function computeStreak(symbol, rangeHistory) {
-  const prices = rangeHistory
-    .map(h => { const s = h.stocks.find(x => x.symbol === symbol); return s ? s.price : null; })
-    .filter(p => p != null);
-  if (prices.length < 2) return 0;
-  let streak = 0;
-  for (let i = prices.length - 1; i > 0; i--) {
-    const dir = Math.sign(prices[i] - prices[i - 1]);
-    if (dir === 0) break;
-    if (streak === 0) streak = dir;
-    else if (Math.sign(streak) === dir) streak += dir;
-    else break;
-  }
-  return streak;
-}
-
-function computeCumulative(startDate, endDate) {
-  const rangeHistory = history.filter(h => h.date >= startDate && h.date <= endDate);
-  if (rangeHistory.length < 2) return { ranked: [], rangeHistory };
-  const first = rangeHistory[0];
-  const last = rangeHistory[rangeHistory.length - 1];
-  const firstMap = {};
-  first.stocks.forEach(s => { firstMap[s.symbol] = s.price; });
-  const ranked = last.stocks
-    .filter(s => firstMap[s.symbol] != null && firstMap[s.symbol] !== 0)
-    .map(s => ({
-      symbol: s.symbol,
-      firstPrice: firstMap[s.symbol],
-      lastPrice: s.price,
-      cumChange: ((s.price - firstMap[s.symbol]) / firstMap[s.symbol]) * 100,
-      streak: computeStreak(s.symbol, rangeHistory),
-    }))
-    .sort((a, b) => b.cumChange - a.cumChange);
-  return { ranked, rangeHistory };
-}
-
-function streakBadge(streak) {
-  if (!streak) return "";
-  const dir = streak > 0 ? "up" : "down";
-  const arrow = streak > 0 ? "↑" : "↓";
-  return `<span class="streak-badge ${dir}">${arrow} ${Math.abs(streak)}d</span>`;
-}
-
-function renderCumulative() {
-  populateCumuRangeSelectors();
-  const emptyEl = document.getElementById("cumuEmpty");
-  const contentEl = document.getElementById("cumuContent");
-  const { ranked, rangeHistory } = computeCumulative(cumuStartDate, cumuEndDate);
-
-  if (ranked.length === 0) {
-    emptyEl.style.display = "block";
-    contentEl.style.display = "none";
-    if (cumuStartDate >= cumuEndDate) {
-      emptyEl.textContent = "La fecha \"Desde\" debe ser anterior a la fecha \"Hasta\". Ajusta el rango arriba.";
-    } else {
-      emptyEl.textContent = `No hay al menos 2 capturas dentro del rango ${fmtDate(cumuStartDate)} – ${fmtDate(cumuEndDate)}. Elige un rango más amplio.`;
-    }
-    return;
-  }
-  emptyEl.style.display = "none";
-  contentEl.style.display = "block";
-
-  const gainers = ranked.slice(0, 8);
-  const losers = [...ranked].reverse().slice(0, 8);
-
-  const rowHtml = (s) => `
-    <div class="mover-row" onclick="selectSymbol('${s.symbol}')">
-      <span class="mono">${s.symbol} ${streakBadge(s.streak)}</span>
-      <span class="pill ${s.cumChange >= 0 ? 'pos' : 'neg'}">${fmtPct(s.cumChange)}</span>
-    </div>`;
-  document.getElementById("cumuGainersList").innerHTML = gainers.map(rowHtml).join("");
-  document.getElementById("cumuLosersList").innerHTML = losers.map(rowHtml).join("");
-
-  if (chartLibMissing("cumuChart")) return;
-  const top5 = ranked.slice(0, 5);
-  const datasets = top5.map((s, i) => {
-    const palette = ["#C08552", "#57A776", "#8AA6D9", "#C4635A", "#D9B36E"];
-    const series = rangeHistory.map(h => {
-      const stock = h.stocks.find(x => x.symbol === s.symbol);
-      if (!stock) return null;
-      return Number(((stock.price / s.firstPrice) * 100).toFixed(2));
-    });
-    return { label: s.symbol, data: series, borderColor: palette[i], backgroundColor: palette[i], tension: 0.3, spanGaps: true };
+document.querySelectorAll("#modeTabs .tab").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("#modeTabs .tab").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    viewMode = btn.dataset.mode;
+    render();
   });
-  if (cumuChart) cumuChart.destroy();
-  cumuChart = new Chart(document.getElementById("cumuChart"), {
-    type: "line",
-    data: { labels: rangeHistory.map(h => fmtDate(h.date)), datasets },
-    options: {
-      plugins: {
-        legend: { labels: { color: "#ECE7DA", font: { size: 11 } } },
-        tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${c.raw}` } },
-      },
-      scales: {
-        x: { ticks: { color: "#8B93AC" }, grid: { color: "#2B3559" } },
-        y: { ticks: { color: "#8B93AC" }, grid: { color: "#2B3559" } },
-      },
-    },
-  });
-}
-
-document.getElementById("cumuStart").addEventListener("change", (e) => {
-  cumuStartDate = e.target.value;
-  renderCumulative();
 });
-document.getElementById("cumuEnd").addEventListener("change", (e) => {
-  cumuEndDate = e.target.value;
-  renderCumulative();
+
+document.querySelectorAll("#periodTabs .tab").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("#periodTabs .tab").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    period = btn.dataset.period;
+    render();
+  });
+});
+
+document.getElementById("rangeStart").addEventListener("change", (e) => {
+  rangeStartDate = e.target.value;
+  render();
+});
+document.getElementById("rangeEnd").addEventListener("change", (e) => {
+  rangeEndDate = e.target.value;
+  render();
 });
 
 /* ------------------------------------------------------------------ */

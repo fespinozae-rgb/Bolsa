@@ -129,6 +129,16 @@
 
   <div class="panel" style="margin-bottom:24px;">
     <h3>📈 Desempeño acumulado</h3>
+    <div class="form-row" style="margin-bottom:14px;">
+      <div class="field">
+        <label>Desde</label>
+        <select id="cumuStart"></select>
+      </div>
+      <div class="field">
+        <label>Hasta</label>
+        <select id="cumuEnd"></select>
+      </div>
+    </div>
     <div id="cumuEmpty" class="empty" style="display:none;"></div>
     <div id="cumuContent">
       <div class="cumu-grid">
@@ -490,9 +500,35 @@ document.getElementById("dateSelect").addEventListener("change", (e) => {
 /* ------------------------------------------------------------------ */
 
 let cumuChart;
+let cumuStartDate = null;
+let cumuEndDate = null;
 
-function computeStreak(symbol) {
-  const prices = history
+function populateCumuRangeSelectors() {
+  if (history.length === 0) return;
+  const startSel = document.getElementById("cumuStart");
+  const endSel = document.getElementById("cumuEnd");
+  const optionsHtml = history.map(h => `<option value="${h.date}">${fmtDate(h.date)}</option>`).join("");
+  startSel.innerHTML = optionsHtml;
+  endSel.innerHTML = optionsHtml;
+
+  if (!cumuStartDate) {
+    // Por defecto: 1 de septiembre (o la fecha disponible más cercana en adelante)
+    const preferred = "2026-09-01";
+    const candidate = history.find(h => h.date >= preferred);
+    cumuStartDate = candidate ? candidate.date : history[0].date;
+  }
+  if (!cumuEndDate) cumuEndDate = history[history.length - 1].date;
+
+  // Si alguna fecha guardada ya no existe en el historial, cae al extremo más cercano
+  if (!history.some(h => h.date === cumuStartDate)) cumuStartDate = history[0].date;
+  if (!history.some(h => h.date === cumuEndDate)) cumuEndDate = history[history.length - 1].date;
+
+  startSel.value = cumuStartDate;
+  endSel.value = cumuEndDate;
+}
+
+function computeStreak(symbol, rangeHistory) {
+  const prices = rangeHistory
     .map(h => { const s = h.stocks.find(x => x.symbol === symbol); return s ? s.price : null; })
     .filter(p => p != null);
   if (prices.length < 2) return 0;
@@ -507,22 +543,24 @@ function computeStreak(symbol) {
   return streak;
 }
 
-function computeCumulative() {
-  if (history.length < 2) return [];
-  const first = history[0];
-  const last = history[history.length - 1];
+function computeCumulative(startDate, endDate) {
+  const rangeHistory = history.filter(h => h.date >= startDate && h.date <= endDate);
+  if (rangeHistory.length < 2) return { ranked: [], rangeHistory };
+  const first = rangeHistory[0];
+  const last = rangeHistory[rangeHistory.length - 1];
   const firstMap = {};
   first.stocks.forEach(s => { firstMap[s.symbol] = s.price; });
-  return last.stocks
+  const ranked = last.stocks
     .filter(s => firstMap[s.symbol] != null && firstMap[s.symbol] !== 0)
     .map(s => ({
       symbol: s.symbol,
       firstPrice: firstMap[s.symbol],
       lastPrice: s.price,
       cumChange: ((s.price - firstMap[s.symbol]) / firstMap[s.symbol]) * 100,
-      streak: computeStreak(s.symbol),
+      streak: computeStreak(s.symbol, rangeHistory),
     }))
     .sort((a, b) => b.cumChange - a.cumChange);
+  return { ranked, rangeHistory };
 }
 
 function streakBadge(streak) {
@@ -533,14 +571,19 @@ function streakBadge(streak) {
 }
 
 function renderCumulative() {
+  populateCumuRangeSelectors();
   const emptyEl = document.getElementById("cumuEmpty");
   const contentEl = document.getElementById("cumuContent");
-  const ranked = computeCumulative();
+  const { ranked, rangeHistory } = computeCumulative(cumuStartDate, cumuEndDate);
 
   if (ranked.length === 0) {
     emptyEl.style.display = "block";
     contentEl.style.display = "none";
-    emptyEl.textContent = `Necesitas al menos 2 días de historial (hoy tienes ${history.length}) para calcular desempeño acumulado y tendencias. Vuelve en unos días.`;
+    if (cumuStartDate >= cumuEndDate) {
+      emptyEl.textContent = "La fecha \"Desde\" debe ser anterior a la fecha \"Hasta\". Ajusta el rango arriba.";
+    } else {
+      emptyEl.textContent = `No hay al menos 2 capturas dentro del rango ${fmtDate(cumuStartDate)} – ${fmtDate(cumuEndDate)}. Elige un rango más amplio.`;
+    }
     return;
   }
   emptyEl.style.display = "none";
@@ -561,7 +604,7 @@ function renderCumulative() {
   const top5 = ranked.slice(0, 5);
   const datasets = top5.map((s, i) => {
     const palette = ["#C08552", "#57A776", "#8AA6D9", "#C4635A", "#D9B36E"];
-    const series = history.map(h => {
+    const series = rangeHistory.map(h => {
       const stock = h.stocks.find(x => x.symbol === s.symbol);
       if (!stock) return null;
       return Number(((stock.price / s.firstPrice) * 100).toFixed(2));
@@ -571,7 +614,7 @@ function renderCumulative() {
   if (cumuChart) cumuChart.destroy();
   cumuChart = new Chart(document.getElementById("cumuChart"), {
     type: "line",
-    data: { labels: history.map(h => fmtDate(h.date)), datasets },
+    data: { labels: rangeHistory.map(h => fmtDate(h.date)), datasets },
     options: {
       plugins: {
         legend: { labels: { color: "#ECE7DA", font: { size: 11 } } },
@@ -584,6 +627,15 @@ function renderCumulative() {
     },
   });
 }
+
+document.getElementById("cumuStart").addEventListener("change", (e) => {
+  cumuStartDate = e.target.value;
+  renderCumulative();
+});
+document.getElementById("cumuEnd").addEventListener("change", (e) => {
+  cumuEndDate = e.target.value;
+  renderCumulative();
+});
 
 /* ------------------------------------------------------------------ */
 /* Módulo: Simulador de inversión                                       */

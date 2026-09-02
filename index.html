@@ -7,6 +7,12 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script>
+  // Respaldo: si cdnjs no cargó Chart.js (bloqueo de red, ad-blocker, etc.), intenta con jsDelivr.
+  if (typeof Chart === "undefined") {
+    document.write('<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"><\/script>');
+  }
+</script>
 <style>
   :root {
     --bg: #12182A; --panel: #1A2238; --panel-2: #212B47; --border: #2B3559;
@@ -170,12 +176,28 @@ function render() {
   document.getElementById("subtitle").textContent =
     `Bolsa de Santiago · ${snap.stocks.length} instrumentos seguidos · captura del ${fmtDate(snap.date)}`;
 
-  renderKpis(snap);
-  renderSectorChart(snap);
-  renderMarketTrend();
-  renderMovers(snap);
-  renderTable(snap);
-  renderSymbolTrend();
+  const safe = (fn, label) => {
+    try { fn(); } catch (err) { console.error(`Error en ${label}:`, err); }
+  };
+  safe(() => renderKpis(snap), "renderKpis");
+  safe(() => renderSectorChart(snap), "renderSectorChart");
+  safe(() => renderMarketTrend(), "renderMarketTrend");
+  safe(() => renderMovers(snap), "renderMovers");
+  safe(() => renderTable(snap), "renderTable");
+  safe(() => renderSymbolTrend(), "renderSymbolTrend");
+}
+
+function chartLibMissing(canvasId, msg) {
+  const canvas = document.getElementById(canvasId);
+  if (typeof Chart === "undefined") {
+    canvas.style.display = "none";
+    const warn = document.createElement("div");
+    warn.className = "empty";
+    warn.textContent = msg || "No se pudo cargar la librería de gráficos (Chart.js). El resto del dashboard funciona igual.";
+    canvas.parentNode.insertBefore(warn, canvas.nextSibling);
+    return true;
+  }
+  return false;
 }
 
 function renderKpis(snap) {
@@ -195,6 +217,7 @@ function renderKpis(snap) {
 }
 
 function renderSectorChart(snap) {
+  if (chartLibMissing("sectorChart")) return;
   const sorted = [...snap.sectors].sort((a, b) => b.change - a.change);
   if (sectorChart) sectorChart.destroy();
   sectorChart = new Chart(document.getElementById("sectorChart"), {
@@ -229,6 +252,7 @@ function renderMarketTrend() {
   }
   canvas.style.display = "block";
   empty.style.display = "none";
+  if (chartLibMissing("marketTrendChart")) return;
   const points = history.map(h => ({
     date: h.date,
     avg: h.stocks.reduce((a, s) => a + (s.change || 0), 0) / h.stocks.length,
@@ -322,6 +346,7 @@ function renderSymbolTrend() {
   }
   canvas.style.display = "block";
   empty.style.display = "none";
+  if (chartLibMissing("symbolTrendChart")) return;
   if (symbolTrendChart) symbolTrendChart.destroy();
   symbolTrendChart = new Chart(canvas, {
     type: "line",

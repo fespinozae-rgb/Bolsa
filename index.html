@@ -29,6 +29,7 @@
   .subtitle { color: var(--text-muted); font-size: 14px; margin-top: 6px; }
   select { background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 9px 12px; border-radius: 8px; font-size: 13px; font-family: inherit; }
   .kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 24px; }
+  .kpis-3 { grid-template-columns: repeat(3, 1fr) !important; }
   @media (max-width: 900px) { .kpis { grid-template-columns: repeat(2, 1fr); } .grid-2, .movers { grid-template-columns: 1fr !important; } }
   .kpi { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
   .kpi-label { font-size: 11px; color: var(--text-muted); margin-bottom: 6px; }
@@ -123,6 +124,13 @@
 
   <div class="kpis" id="kpis"></div>
 
+  <div class="panel" style="margin-bottom:24px;">
+    <h3>🌎 Contexto de mercado</h3>
+    <div class="kpis kpis-3" id="macroKpis" style="margin-bottom:14px;"></div>
+    <canvas id="macroChart" height="180"></canvas>
+    <div class="empty" id="macroEmpty" style="display:none;"></div>
+  </div>
+
   <div class="grid-2">
     <div class="panel">
       <h3 id="sectorTitle">Rendimiento por sector</h3>
@@ -150,6 +158,26 @@
     </div>
   </div>
 
+  <div class="panel" style="margin-bottom:24px;">
+    <h3>📊 Comparador de estrategias</h3>
+    <div class="form-row" style="margin-bottom:10px;">
+      <div class="field">
+        <label>Estrategia A</label>
+        <select id="stratA"></select>
+      </div>
+      <div class="field">
+        <label>Estrategia B</label>
+        <select id="stratB"></select>
+      </div>
+    </div>
+    <div id="stratSummary" style="font-size:13px; margin-bottom:10px;"></div>
+    <div id="stratEmpty" class="empty" style="display:none;"></div>
+    <canvas id="stratChart" height="220"></canvas>
+    <div class="mbc-hint" style="font-size:11.5px; color:var(--text-muted); margin-top:12px;">
+      Compara el retorno acumulado de distintas combinaciones de acciones en el mismo rango de fechas definido arriba (Personalizado/Semanal/Mensual/etc. — funciona independiente de si la vista principal está en Diario o Acumulado). "Baja/alta volatilidad" se calculan sobre la desviación estándar de las variaciones diarias dentro del rango elegido.
+    </div>
+  </div>
+
   <div class="panel" id="trendPanel" style="display:none; margin-bottom:24px;">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
       <h3 id="trendTitle" style="margin:0;">Tendencia</h3>
@@ -161,7 +189,12 @@
 
   <div class="panel" style="margin-bottom:24px;">
     <h3>💼 Simulador de inversión</h3>
-    <div class="form-row">
+    <div class="tabs" id="pfModeTabs" style="margin-bottom:14px;">
+      <button class="tab active" data-pfmode="single">Compra única</button>
+      <button class="tab" data-pfmode="dca">Aportes periódicos (DCA)</button>
+    </div>
+
+    <div class="form-row" id="pfSingleForm">
       <div class="field">
         <label>Acción</label>
         <select id="pfSymbol"></select>
@@ -176,6 +209,34 @@
       </div>
       <button class="btn-primary" id="pfAddBtn">Agregar posición</button>
     </div>
+
+    <div class="form-row" id="pfDcaForm" style="display:none;">
+      <div class="field">
+        <label>Acción</label>
+        <select id="pfDcaSymbol"></select>
+      </div>
+      <div class="field">
+        <label>Monto por aporte (CLP)</label>
+        <input id="pfDcaAmount" type="number" min="1" step="1" placeholder="Ej: 100000" />
+      </div>
+      <div class="field">
+        <label>Frecuencia</label>
+        <select id="pfDcaFreq">
+          <option value="7">Semanal</option>
+          <option value="30" selected>Mensual</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Desde</label>
+        <select id="pfDcaStart"></select>
+      </div>
+      <div class="field">
+        <label>Hasta</label>
+        <select id="pfDcaEnd"></select>
+      </div>
+      <button class="btn-primary" id="pfDcaAddBtn">Crear plan DCA</button>
+    </div>
+
     <div id="pfError" class="form-error" style="display:none;"></div>
 
     <div id="pfEmpty" class="empty">Aún no simulas ninguna inversión. Agrega una posición arriba para empezar a hacerle seguimiento.</div>
@@ -187,8 +248,7 @@
           <thead>
             <tr>
               <th style="text-align:left;">Acción</th>
-              <th>Fecha compra</th>
-              <th>Precio compra</th>
+              <th>Detalle</th>
               <th>Cantidad</th>
               <th>Invertido</th>
               <th>Valor actual</th>
@@ -250,7 +310,7 @@ let sortKey = "change", sortDir = "desc";
 let filterTab = "all";
 let searchTerm = "";
 let selectedSymbol = null;
-let sectorChart, marketTrendChart, symbolTrendChart;
+let sectorChart, marketTrendChart, symbolTrendChart, stratChart;
 
 // Vista: 'daily' (variación del día) o 'cumulative' (rendimiento acumulado en un período)
 let viewMode = "daily";
@@ -411,12 +471,14 @@ function render() {
   };
   safe(() => renderControlBar(), "renderControlBar");
   safe(() => renderKpis(snap), "renderKpis");
+  safe(() => renderMacroPanel(), "renderMacroPanel");
   safe(() => renderSectorChart(snap), "renderSectorChart");
   safe(() => renderMarketTrend(), "renderMarketTrend");
   safe(() => renderMovers(snap), "renderMovers");
   safe(() => renderTable(snap), "renderTable");
   safe(() => renderSymbolTrend(), "renderSymbolTrend");
   safe(() => renderPortfolio(), "renderPortfolio");
+  safe(() => renderStrategyComparator(), "renderStrategyComparator");
 }
 
 function chartLibMissing(canvasId, msg) {
@@ -492,6 +554,78 @@ function renderKpis(snap) {
   `;
 }
 
+/* ------------------------------------------------------------------ */
+/* Contexto de mercado: IPSA, dólar, cobre                              */
+/* ------------------------------------------------------------------ */
+
+let macroChart;
+const MACRO_META = {
+  ipsa: { label: "IPSA", fmt: (v) => v.toLocaleString("es-CL", { maximumFractionDigits: 0 }) },
+  usdclp: { label: "Dólar (USD/CLP)", fmt: (v) => "$" + v.toLocaleString("es-CL", { maximumFractionDigits: 1 }) },
+  copper: { label: "Cobre (USD/lb)", fmt: (v) => "US$" + v.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) },
+};
+
+function findLatestMarket(key) {
+  for (let i = history.length - 1; i >= 0; i--) {
+    const m = history[i].market && history[i].market[key];
+    if (m) return { ...m, date: history[i].date };
+  }
+  return null;
+}
+
+function renderMacroPanel() {
+  const kpisEl = document.getElementById("macroKpis");
+  const canvas = document.getElementById("macroChart");
+  const emptyEl = document.getElementById("macroEmpty");
+
+  const cards = Object.keys(MACRO_META).map(key => {
+    const latest = findLatestMarket(key);
+    if (!latest) return `<div class="kpi"><div class="kpi-label">${MACRO_META[key].label}</div><div class="kpi-value" style="color:var(--text-muted); font-size:14px;">Sin datos aún</div></div>`;
+    const color = latest.change >= 0 ? "var(--positive)" : "var(--negative)";
+    return `<div class="kpi"><div class="kpi-label">${MACRO_META[key].label}</div><div class="kpi-value">${MACRO_META[key].fmt(latest.price)}</div><div style="font-size:12px; color:${color}; margin-top:2px;">${fmtPct(latest.change)}</div></div>`;
+  });
+  kpisEl.innerHTML = cards.join("");
+
+  const datesWithMarket = history.filter(h => h.market && Object.keys(h.market).length > 0);
+  if (datesWithMarket.length < 2) {
+    canvas.style.display = "none";
+    emptyEl.style.display = "block";
+    emptyEl.textContent = "Necesitas al menos 2 días con datos de contexto de mercado para ver la tendencia (esta información se empezó a guardar recién).";
+    return;
+  }
+  canvas.style.display = "block";
+  emptyEl.style.display = "none";
+  if (chartLibMissing("macroChart")) return;
+
+  const palette = { ipsa: "#C08552", usdclp: "#8AA6D9", copper: "#D9B36E" };
+  const datasets = Object.keys(MACRO_META).map(key => {
+    const firstEntry = datesWithMarket.find(h => h.market[key]);
+    if (!firstEntry) return null;
+    const base = firstEntry.market[key].price;
+    return {
+      label: MACRO_META[key].label,
+      data: datesWithMarket.map(h => h.market[key] ? Number(((h.market[key].price / base) * 100).toFixed(2)) : null),
+      borderColor: palette[key], backgroundColor: palette[key], tension: 0.3, spanGaps: true,
+    };
+  }).filter(Boolean);
+
+  if (macroChart) macroChart.destroy();
+  macroChart = new Chart(canvas, {
+    type: "line",
+    data: { labels: datesWithMarket.map(h => fmtDate(h.date)), datasets },
+    options: {
+      plugins: {
+        legend: { labels: { color: "#ECE7DA", font: { size: 11 } } },
+        tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${c.raw}` } },
+      },
+      scales: {
+        x: { ticks: { color: "#8B93AC" }, grid: { color: "#2B3559" } },
+        y: { ticks: { color: "#8B93AC" }, grid: { color: "#2B3559" } },
+      },
+    },
+  });
+}
+
 function renderSectorChart(snap) {
   document.getElementById("sectorTitle").textContent = viewMode === "cumulative"
     ? `Rendimiento por sector (${PERIOD_LABELS[period]})` : "Rendimiento por sector";
@@ -539,15 +673,20 @@ function renderMarketTrend() {
       date: h.date,
       avg: h.stocks.reduce((a, s) => a + (s.change || 0), 0) / h.stocks.length,
     }));
+    const ipsaPoints = history.map(h => h.market && h.market.ipsa ? h.market.ipsa.change : null);
+    const hasIpsa = ipsaPoints.some(v => v != null);
     if (marketTrendChart) marketTrendChart.destroy();
     marketTrendChart = new Chart(canvas, {
       type: "line",
       data: {
         labels: points.map(p => fmtDate(p.date)),
-        datasets: [{ label: "Promedio diario", data: points.map(p => p.avg.toFixed(2)), borderColor: "#C08552", backgroundColor: "#C08552", tension: 0.3 }],
+        datasets: [
+          { label: "Promedio diario (tu canasta)", data: points.map(p => p.avg.toFixed(2)), borderColor: "#C08552", backgroundColor: "#C08552", tension: 0.3 },
+          ...(hasIpsa ? [{ label: "IPSA", data: ipsaPoints, borderColor: "#8AA6D9", backgroundColor: "#8AA6D9", tension: 0.3, spanGaps: true, borderDash: [4, 4] }] : []),
+        ],
       },
       options: {
-        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${c.raw}%` } } },
+        plugins: { legend: { display: hasIpsa, labels: { color: "#ECE7DA", font: { size: 11 } } }, tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${c.raw}%` } } },
         scales: {
           x: { ticks: { color: "#8B93AC" }, grid: { color: "#2B3559" } },
           y: { ticks: { color: "#8B93AC", callback: (v) => v + "%" }, grid: { color: "#2B3559" } },
@@ -591,13 +730,23 @@ function renderMarketTrend() {
     borderColor: palette[i], backgroundColor: palette[i], borderWidth: 1, tension: 0.3, spanGaps: true,
   }));
 
+  const ipsaFirst = active.rangeHistory.find(h => h.market && h.market.ipsa);
+  const ipsaDataset = ipsaFirst ? [{
+    label: "IPSA",
+    data: active.rangeHistory.map(h => h.market && h.market.ipsa
+      ? Number((((h.market.ipsa.price - ipsaFirst.market.ipsa.price) / ipsaFirst.market.ipsa.price) * 100).toFixed(2))
+      : null),
+    borderColor: "#ECE7DA", backgroundColor: "#ECE7DA", borderWidth: 2, borderDash: [4, 4], tension: 0.3, spanGaps: true,
+  }] : [];
+
   if (marketTrendChart) marketTrendChart.destroy();
   marketTrendChart = new Chart(canvas, {
     type: "line",
     data: {
       labels: active.rangeHistory.map(h => fmtDate(h.date)),
       datasets: [
-        { label: "Promedio mercado", data: indexSeries, borderColor: "#C08552", backgroundColor: "#C08552", borderWidth: 3, tension: 0.3 },
+        { label: "Promedio mercado (tu canasta)", data: indexSeries, borderColor: "#C08552", backgroundColor: "#C08552", borderWidth: 3, tension: 0.3 },
+        ...ipsaDataset,
         ...extraDatasets,
       ],
     },
@@ -664,6 +813,121 @@ function renderTable(snap) {
       <td style="color:var(--text-muted)">${fmtVol(s.volume)}</td>
     </tr>
   `).join("");
+}
+
+/* ------------------------------------------------------------------ */
+/* Comparador de estrategias                                             */
+/* ------------------------------------------------------------------ */
+
+function populateStrategySelectors() {
+  const aSel = document.getElementById("stratA");
+  const bSel = document.getElementById("stratB");
+  const sectors = [...new Set(Object.values(SECTORS))].sort();
+  const optionsHtml =
+    `<option value="all">Todas las acciones</option>` +
+    `<option value="lowvol">Baja volatilidad (5 más estables)</option>` +
+    `<option value="highvol">Alta volatilidad (5 más riesgosas)</option>` +
+    sectors.map(s => `<option value="sector:${s}">Sector: ${s}</option>`).join("");
+  if (!aSel.dataset.populated) { aSel.innerHTML = optionsHtml; aSel.value = "all"; aSel.dataset.populated = "1"; }
+  if (!bSel.dataset.populated) { bSel.innerHTML = optionsHtml; bSel.value = "lowvol"; bSel.dataset.populated = "1"; }
+}
+
+function computeVolatility(symbol, rangeHistory) {
+  const prices = rangeHistory.map(h => { const s = h.stocks.find(x => x.symbol === symbol); return s ? s.price : null; }).filter(p => p != null);
+  if (prices.length < 3) return null;
+  const returns = [];
+  for (let i = 1; i < prices.length; i++) returns.push((prices[i] - prices[i - 1]) / prices[i - 1]);
+  const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
+  const variance = returns.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / returns.length;
+  return Math.sqrt(variance);
+}
+
+function getStrategySymbols(key, cmap, rangeHistory) {
+  const available = Object.keys(cmap);
+  if (key === "all") return available;
+  if (key.startsWith("sector:")) {
+    const sectorName = key.slice(7);
+    return available.filter(sym => SECTORS[sym] === sectorName);
+  }
+  if (key === "lowvol" || key === "highvol") {
+    const withVol = available.map(sym => ({ sym, vol: computeVolatility(sym, rangeHistory) })).filter(x => x.vol != null);
+    withVol.sort((a, b) => key === "lowvol" ? a.vol - b.vol : b.vol - a.vol);
+    return withVol.slice(0, 5).map(x => x.sym);
+  }
+  return [];
+}
+
+function computeBasketSeries(symbols, cmap, rangeHistory) {
+  if (symbols.length === 0) return { series: [], finalReturn: null };
+  const series = rangeHistory.map(h => {
+    const vals = symbols.map(sym => {
+      const stock = h.stocks.find(x => x.symbol === sym);
+      if (!stock || !cmap[sym]) return null;
+      return (stock.price / cmap[sym].firstPrice) * 100;
+    }).filter(v => v != null);
+    return vals.length ? Number((vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2)) : null;
+  });
+  const lastValid = [...series].reverse().find(v => v != null);
+  const finalReturn = lastValid != null ? Number((lastValid - 100).toFixed(2)) : null;
+  return { series, finalReturn };
+}
+
+function strategyLabel(key) {
+  if (key === "all") return "Todas las acciones";
+  if (key === "lowvol") return "Baja volatilidad";
+  if (key === "highvol") return "Alta volatilidad";
+  if (key.startsWith("sector:")) return key.slice(7);
+  return key;
+}
+
+function renderStrategyComparator() {
+  populateStrategySelectors();
+  const active = computeActiveRange();
+  const emptyEl = document.getElementById("stratEmpty");
+  const canvas = document.getElementById("stratChart");
+  const summaryEl = document.getElementById("stratSummary");
+  if (!active || active.rangeHistory.length < 3) {
+    canvas.style.display = "none";
+    emptyEl.style.display = "block";
+    emptyEl.textContent = "Necesitas al menos 3 capturas en el rango elegido arriba para comparar estrategias con sentido.";
+    summaryEl.textContent = "";
+    return;
+  }
+  canvas.style.display = "block";
+  emptyEl.style.display = "none";
+  if (chartLibMissing("stratChart")) return;
+
+  const cmap = computeCumulativeMap(active.rangeHistory);
+  const keyA = document.getElementById("stratA").value || "all";
+  const keyB = document.getElementById("stratB").value || "lowvol";
+
+  const resA = computeBasketSeries(getStrategySymbols(keyA, cmap, active.rangeHistory), cmap, active.rangeHistory);
+  const resB = computeBasketSeries(getStrategySymbols(keyB, cmap, active.rangeHistory), cmap, active.rangeHistory);
+
+  summaryEl.innerHTML = `
+    <span class="mono" style="color:${(resA.finalReturn ?? 0) >= 0 ? 'var(--positive)' : 'var(--negative)'}">${strategyLabel(keyA)}: ${resA.finalReturn != null ? fmtPct(resA.finalReturn) : "—"}</span>
+    &nbsp;&nbsp;vs&nbsp;&nbsp;
+    <span class="mono" style="color:${(resB.finalReturn ?? 0) >= 0 ? 'var(--positive)' : 'var(--negative)'}">${strategyLabel(keyB)}: ${resB.finalReturn != null ? fmtPct(resB.finalReturn) : "—"}</span>
+  `;
+
+  if (stratChart) stratChart.destroy();
+  stratChart = new Chart(canvas, {
+    type: "line",
+    data: {
+      labels: active.rangeHistory.map(h => fmtDate(h.date)),
+      datasets: [
+        { label: strategyLabel(keyA), data: resA.series, borderColor: "#57A776", backgroundColor: "#57A776", tension: 0.3, spanGaps: true },
+        { label: strategyLabel(keyB), data: resB.series, borderColor: "#C4635A", backgroundColor: "#C4635A", tension: 0.3, spanGaps: true },
+      ],
+    },
+    options: {
+      plugins: { legend: { labels: { color: "#ECE7DA", font: { size: 11 } } }, tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${c.raw}` } } },
+      scales: {
+        x: { ticks: { color: "#8B93AC" }, grid: { color: "#2B3559" } },
+        y: { ticks: { color: "#8B93AC" }, grid: { color: "#2B3559" } },
+      },
+    },
+  });
 }
 
 function selectSymbol(sym) {
@@ -807,12 +1071,16 @@ document.getElementById("rangeEnd").addEventListener("change", (e) => {
   render();
 });
 
+document.getElementById("stratA").addEventListener("change", renderStrategyComparator);
+document.getElementById("stratB").addEventListener("change", renderStrategyComparator);
+
 /* ------------------------------------------------------------------ */
 /* Módulo: Simulador de inversión                                       */
 /* ------------------------------------------------------------------ */
 
 const PF_KEY = "chile_dashboard_portfolio_v1";
 let pfChart;
+let pfMode = "single";
 
 function loadPortfolio() {
   try {
@@ -843,14 +1111,27 @@ function latestPrice(symbol) {
 function populatePortfolioForm() {
   const snap = currentSnapshot();
   if (!snap) return;
-  const symSel = document.getElementById("pfSymbol");
-  symSel.innerHTML = snap.stocks
-    .slice().sort((a, b) => a.symbol.localeCompare(b.symbol))
+  const symbolOptions = snap.stocks.slice().sort((a, b) => a.symbol.localeCompare(b.symbol))
     .map(s => `<option value="${s.symbol}">${s.symbol}</option>`).join("");
+  const dateOptions = history.slice().reverse().map(h => `<option value="${h.date}">${fmtDate(h.date)}</option>`).join("");
+  const dateOptionsAsc = history.map(h => `<option value="${h.date}">${fmtDate(h.date)}</option>`).join("");
 
-  const dateSel = document.getElementById("pfDate");
-  dateSel.innerHTML = history.slice().reverse()
-    .map(h => `<option value="${h.date}">${fmtDate(h.date)}</option>`).join("");
+  document.getElementById("pfSymbol").innerHTML = symbolOptions;
+  document.getElementById("pfDate").innerHTML = dateOptions;
+
+  document.getElementById("pfDcaSymbol").innerHTML = symbolOptions;
+  const startSel = document.getElementById("pfDcaStart");
+  const endSel = document.getElementById("pfDcaEnd");
+  if (!startSel.dataset.populated) {
+    startSel.innerHTML = dateOptionsAsc;
+    startSel.value = history[0].date;
+    startSel.dataset.populated = "1";
+  }
+  if (!endSel.dataset.populated) {
+    endSel.innerHTML = dateOptionsAsc;
+    endSel.value = history[history.length - 1].date;
+    endSel.dataset.populated = "1";
+  }
 }
 
 function handleAddPosition() {
@@ -882,12 +1163,79 @@ function handleAddPosition() {
   renderPortfolio();
 }
 
+function handleAddDcaPlan() {
+  const errorEl = document.getElementById("pfError");
+  errorEl.style.display = "none";
+  const symbol = document.getElementById("pfDcaSymbol").value;
+  const amount = parseFloat(document.getElementById("pfDcaAmount").value);
+  const freqDays = parseInt(document.getElementById("pfDcaFreq").value, 10);
+  const startDate = document.getElementById("pfDcaStart").value;
+  const endDate = document.getElementById("pfDcaEnd").value;
+
+  if (!symbol || !amount || amount <= 0 || !startDate || !endDate) {
+    errorEl.textContent = "Completa la acción, el monto por aporte y el rango de fechas.";
+    errorEl.style.display = "block";
+    return;
+  }
+  if (startDate > endDate) {
+    errorEl.textContent = "La fecha \"Desde\" debe ser anterior a \"Hasta\".";
+    errorEl.style.display = "block";
+    return;
+  }
+
+  // Genera fechas objetivo cada N días y las hace calzar con la captura
+  // disponible más cercana (igual o posterior) — evita depender de que
+  // exista dato exacto para cada fecha teórica.
+  const groupId = "dca_" + Date.now();
+  const newPositions = [];
+  let cursor = new Date(startDate + "T12:00:00");
+  const end = new Date(endDate + "T12:00:00");
+  let lastMatchedDate = null;
+
+  while (cursor <= end) {
+    const targetStr = cursor.toISOString().slice(0, 10);
+    const match = history.find(h => h.date >= targetStr && h.date <= endDate);
+    if (match && match.date !== lastMatchedDate) {
+      const price = priceAt(symbol, match.date);
+      if (price) {
+        newPositions.push({
+          id: Date.now() + newPositions.length,
+          symbol, buyDate: match.date, buyPrice: price,
+          quantity: amount / price, investedAmount: amount,
+          dcaGroup: groupId,
+        });
+        lastMatchedDate = match.date;
+      }
+    }
+    cursor = new Date(cursor.getTime() + freqDays * 24 * 60 * 60 * 1000);
+  }
+
+  if (newPositions.length === 0) {
+    errorEl.textContent = "No se encontraron capturas de datos válidas en ese rango para generar aportes.";
+    errorEl.style.display = "block";
+    return;
+  }
+
+  const positions = loadPortfolio();
+  positions.push(...newPositions);
+  savePortfolio(positions);
+  document.getElementById("pfDcaAmount").value = "";
+  renderPortfolio();
+}
+
 function removePosition(id) {
   const positions = loadPortfolio().filter(p => p.id !== id);
   savePortfolio(positions);
   renderPortfolio();
 }
 window.removePosition = removePosition;
+
+function removeDcaGroup(groupId) {
+  const positions = loadPortfolio().filter(p => p.dcaGroup !== groupId);
+  savePortfolio(positions);
+  renderPortfolio();
+}
+window.removeDcaGroup = removeDcaGroup;
 
 function renderPortfolio() {
   populatePortfolioForm();
@@ -906,9 +1254,7 @@ function renderPortfolio() {
   const rows = positions.map(p => {
     const current = latestPrice(p.symbol);
     const currentValue = current != null ? current * p.quantity : null;
-    const gain = currentValue != null ? currentValue - p.investedAmount : null;
-    const gainPct = gain != null ? (gain / p.investedAmount) * 100 : null;
-    return { ...p, current, currentValue, gain, gainPct };
+    return { ...p, current, currentValue };
   });
 
   const totalInvested = rows.reduce((a, r) => a + r.investedAmount, 0);
@@ -923,18 +1269,49 @@ function renderPortfolio() {
     <div class="kpi"><div class="kpi-label">Retorno total</div><div class="kpi-value" style="color:${totalGainPct>=0?'var(--positive)':'var(--negative)'}">${fmtPct(totalGainPct)}</div></div>
   `;
 
-  document.getElementById("pfTableBody").innerHTML = rows.map(r => `
+  // Agrupa las posiciones de un mismo plan DCA en una sola fila resumida.
+  const singleRows = rows.filter(r => !r.dcaGroup);
+  const dcaGroups = {};
+  rows.filter(r => r.dcaGroup).forEach(r => {
+    (dcaGroups[r.dcaGroup] = dcaGroups[r.dcaGroup] || []).push(r);
+  });
+
+  const singleRowsHtml = singleRows.map(r => {
+    const gain = r.currentValue != null ? r.currentValue - r.investedAmount : null;
+    const gainPct = gain != null ? (gain / r.investedAmount) * 100 : null;
+    return `
     <tr>
       <td class="mono" style="text-align:left; font-weight:600;">${r.symbol}</td>
-      <td>${fmtDate(r.buyDate)}</td>
-      <td>${fmtCLP(r.buyPrice)}</td>
+      <td style="color:var(--text-muted); font-size:12px;">Compra única · ${fmtDate(r.buyDate)}</td>
       <td>${r.quantity.toLocaleString("es-CL", {maximumFractionDigits:2})}</td>
       <td>$${fmtCLP(r.investedAmount)}</td>
       <td>${r.currentValue != null ? "$" + fmtCLP(r.currentValue) : "—"}</td>
-      <td style="color:${(r.gainPct ?? 0) >= 0 ? 'var(--positive)' : 'var(--negative)'}">${r.gainPct != null ? fmtPct(r.gainPct) : "—"}</td>
+      <td style="color:${(gainPct ?? 0) >= 0 ? 'var(--positive)' : 'var(--negative)'}">${gainPct != null ? fmtPct(gainPct) : "—"}</td>
       <td><button class="btn-del" onclick="removePosition(${r.id})">✕</button></td>
-    </tr>
-  `).join("");
+    </tr>`;
+  }).join("");
+
+  const dcaRowsHtml = Object.entries(dcaGroups).map(([groupId, group]) => {
+    const symbol = group[0].symbol;
+    const invested = group.reduce((a, r) => a + r.investedAmount, 0);
+    const quantity = group.reduce((a, r) => a + r.quantity, 0);
+    const currentValue = group[0].current != null ? group[0].current * quantity : null;
+    const gain = currentValue != null ? currentValue - invested : null;
+    const gainPct = gain != null ? (gain / invested) * 100 : null;
+    const dates = group.map(r => r.buyDate).sort();
+    return `
+    <tr>
+      <td class="mono" style="text-align:left; font-weight:600;">${symbol}</td>
+      <td style="color:var(--text-muted); font-size:12px;">Plan DCA · ${group.length} aportes · ${fmtDate(dates[0])} - ${fmtDate(dates[dates.length-1])}</td>
+      <td>${quantity.toLocaleString("es-CL", {maximumFractionDigits:2})}</td>
+      <td>$${fmtCLP(invested)}</td>
+      <td>${currentValue != null ? "$" + fmtCLP(currentValue) : "—"}</td>
+      <td style="color:${(gainPct ?? 0) >= 0 ? 'var(--positive)' : 'var(--negative)'}">${gainPct != null ? fmtPct(gainPct) : "—"}</td>
+      <td><button class="btn-del" onclick="removeDcaGroup('${groupId}')">✕</button></td>
+    </tr>`;
+  }).join("");
+
+  document.getElementById("pfTableBody").innerHTML = singleRowsHtml + dcaRowsHtml;
 
   renderPortfolioChart(rows);
 }
@@ -993,6 +1370,17 @@ function renderPortfolioChart(rows) {
 }
 
 document.getElementById("pfAddBtn").addEventListener("click", handleAddPosition);
+document.getElementById("pfDcaAddBtn").addEventListener("click", handleAddDcaPlan);
+document.querySelectorAll("#pfModeTabs .tab").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("#pfModeTabs .tab").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    pfMode = btn.dataset.pfmode;
+    document.getElementById("pfSingleForm").style.display = pfMode === "single" ? "flex" : "none";
+    document.getElementById("pfDcaForm").style.display = pfMode === "dca" ? "flex" : "none";
+    document.getElementById("pfError").style.display = "none";
+  });
+});
 
 async function init() {
   try {

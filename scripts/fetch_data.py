@@ -73,6 +73,14 @@ HISTORY_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "history.js
 # si no, ajusta TZ_OFFSET_HOURS según corresponda (CLT = UTC-4, CLST verano = UTC-3).
 TZ_OFFSET_HOURS = int(os.environ.get("CHILE_TZ_OFFSET", "-4"))
 
+# Indicadores de contexto de mercado (índice, dólar, cobre) — mismo mecanismo
+# de descarga que las acciones, se guardan aparte en snapshot["market"].
+MARKET_TICKERS = {
+    "ipsa": "^IPSA",     # Índice de Precios Selectivo de Acciones
+    "usdclp": "CLP=X",   # Dólar observado (CLP por USD)
+    "copper": "HG=F",    # Cobre futuro (USD/lb) — referencia clave para la economía chilena
+}
+
 
 def today_santiago():
     tz = timezone(timedelta(hours=TZ_OFFSET_HOURS))
@@ -118,6 +126,17 @@ def compute_sectors(stocks):
     ]
 
 
+def fetch_market_indicators():
+    """Descarga IPSA, dólar observado y cobre. Cada uno se salta solo si falla,
+    sin afectar a los demás ni al resto del script."""
+    market = {}
+    for key, ticker in MARKET_TICKERS.items():
+        result = fetch_one(key, ticker)
+        if result:
+            market[key] = {"price": result["price"], "change": result["change"]}
+    return market
+
+
 def load_history():
     if os.path.exists(HISTORY_PATH):
         with open(HISTORY_PATH, "r", encoding="utf-8") as f:
@@ -144,7 +163,8 @@ def main():
         sys.exit(1)
 
     date = today_santiago()
-    snapshot = {"date": date, "stocks": stocks, "sectors": compute_sectors(stocks)}
+    market = fetch_market_indicators()
+    snapshot = {"date": date, "stocks": stocks, "sectors": compute_sectors(stocks), "market": market}
 
     history = load_history()
     history = [h for h in history if h.get("date") != date]  # evita duplicar el día

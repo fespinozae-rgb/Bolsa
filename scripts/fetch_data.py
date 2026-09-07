@@ -10,6 +10,7 @@ o puedes ejecutarlo manualmente:  python scripts/fetch_data.py
 import json
 import os
 import sys
+import urllib.request
 from datetime import datetime, timezone, timedelta
 
 import yfinance as yf
@@ -127,14 +128,55 @@ def compute_sectors(stocks):
 
 
 def fetch_market_indicators():
-    """Descarga IPSA, dólar observado y cobre. Cada uno se salta solo si falla,
-    sin afectar a los demás ni al resto del script."""
+    """Descarga IPSA, dólar observado (Yahoo) y cobre. Cada uno se salta solo si
+    falla, sin afectar a los demás. Además agrega UF, IPC y un conversor de
+    monedas (USD, EUR, PEN, ARS) usando mindicador.cl (gratis, sin API key) y
+    Yahoo Finance como respaldo/complemento."""
     market = {}
     for key, ticker in MARKET_TICKERS.items():
         result = fetch_one(key, ticker)
         if result:
             market[key] = {"price": result["price"], "change": result["change"]}
+
+    mind = fetch_mindicador()
+    if mind:
+        if "uf" in mind and "valor" in mind["uf"]:
+            market["uf"] = {"price": mind["uf"]["valor"]}
+        if "ipc" in mind and "valor" in mind["ipc"]:
+            market["ipc"] = {"value": mind["ipc"]["valor"], "period": mind["ipc"].get("fecha", "")[:7]}
+        if "euro" in mind and "valor" in mind["euro"]:
+            market["eurclp"] = {"price": mind["euro"]["valor"]}
+
+    # Dólar CLP de referencia para armar el conversor: preferimos el ya
+    # descargado de Yahoo; si falló, usamos el de mindicador.cl como respaldo.
+    usd_clp = market.get("usdclp", {}).get("price")
+    if usd_clp is None and mind and "dolar" in mind and "valor" in mind["dolar"]:
+        usd_clp = mind["dolar"]["valor"]
+
+    if usd_clp:
+        pen = fetch_one("PEN", "PEN=X")
+        if pen and pen.get("price"):
+            market["penclp"] = {"price": round(usd_clp / pen["price"], 4)}
+        ars = fetch_one("ARS", "ARS=X")
+        if ars and ars.get("price"):
+            market["arsclp"] = {"price": round(usd_clp / ars["price"], 4)}
+        if "eurclp" not in market:  # respaldo si mindicador.cl falló
+            eur = fetch_one("EUR", "EURUSD=X")
+            if eur and eur.get("price"):
+                market["eurclp"] = {"price": round(usd_clp * eur["price"], 2)}
+
     return market
+
+
+def fetch_mindicador():
+    """Descarga UF, IPC, dólar y euro oficiales desde mindicador.cl — API
+    pública chilena gratuita, sin necesidad de registro ni API key."""
+    try:
+        with urllib.request.urlopen("https://mindicador.cl/api", timeout=15) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        print(f"  [error] mindicador.cl: {exc}")
+        return None
 
 
 def load_history():

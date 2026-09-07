@@ -126,9 +126,31 @@
 
   <div class="panel" style="margin-bottom:24px;">
     <h3>🌎 Contexto de mercado</h3>
-    <div class="kpis kpis-3" id="macroKpis" style="margin-bottom:14px;"></div>
+    <div class="kpis" id="macroKpis" style="margin-bottom:14px;"></div>
     <canvas id="macroChart" height="180"></canvas>
     <div class="empty" id="macroEmpty" style="display:none;"></div>
+  </div>
+
+  <div class="panel" style="margin-bottom:24px;">
+    <h3>💱 Conversor cambiario</h3>
+    <div class="form-row" style="margin-bottom:14px;">
+      <div class="field">
+        <label>Monto</label>
+        <input id="convAmount" type="number" min="0" step="any" value="1000" />
+      </div>
+      <div class="field">
+        <label>De</label>
+        <select id="convFrom"></select>
+      </div>
+      <div class="field">
+        <label>A</label>
+        <select id="convTo"></select>
+      </div>
+    </div>
+    <div id="convResult" style="font-size:15px; margin-bottom:8px;"></div>
+    <div class="mbc-hint" style="font-size:11.5px; color:var(--text-muted);">
+      Tipos de cambio del último día capturado (mindicador.cl para peso/dólar/euro; Yahoo Finance para sol peruano y peso argentino, cruzados vía dólar). Referencial, no para operar en tiempo real.
+    </div>
   </div>
 
   <div class="grid-2">
@@ -477,6 +499,7 @@ function render() {
   safe(() => renderControlBar(), "renderControlBar");
   safe(() => renderKpis(snap), "renderKpis");
   safe(() => renderMacroPanel(), "renderMacroPanel");
+  safe(() => renderConverter(), "renderConverter");
   safe(() => renderSectorChart(snap), "renderSectorChart");
   safe(() => renderMarketTrend(), "renderMarketTrend");
   safe(() => renderMovers(snap), "renderMovers");
@@ -583,13 +606,24 @@ function renderMacroPanel() {
   const canvas = document.getElementById("macroChart");
   const emptyEl = document.getElementById("macroEmpty");
 
-  const cards = Object.keys(MACRO_META).map(key => {
+  const priceCards = Object.keys(MACRO_META).map(key => {
     const latest = findLatestMarket(key);
     if (!latest) return `<div class="kpi"><div class="kpi-label">${MACRO_META[key].label}</div><div class="kpi-value" style="color:var(--text-muted); font-size:14px;">Sin datos aún</div></div>`;
     const color = latest.change >= 0 ? "var(--positive)" : "var(--negative)";
     return `<div class="kpi"><div class="kpi-label">${MACRO_META[key].label}</div><div class="kpi-value">${MACRO_META[key].fmt(latest.price)}</div><div style="font-size:12px; color:${color}; margin-top:2px;">${fmtPct(latest.change)}</div></div>`;
   });
-  kpisEl.innerHTML = cards.join("");
+
+  const uf = findLatestMarket("uf");
+  const ufCard = uf
+    ? `<div class="kpi"><div class="kpi-label">UF</div><div class="kpi-value">$${uf.price.toLocaleString("es-CL", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div></div>`
+    : `<div class="kpi"><div class="kpi-label">UF</div><div class="kpi-value" style="color:var(--text-muted); font-size:14px;">Sin datos aún</div></div>`;
+
+  const ipc = findLatestMarket("ipc");
+  const ipcCard = ipc
+    ? `<div class="kpi"><div class="kpi-label">IPC mensual${ipc.period ? ` (${ipc.period})` : ""}</div><div class="kpi-value">${fmtPct(ipc.value)}</div></div>`
+    : `<div class="kpi"><div class="kpi-label">IPC mensual</div><div class="kpi-value" style="color:var(--text-muted); font-size:14px;">Sin datos aún</div></div>`;
+
+  kpisEl.innerHTML = priceCards.join("") + ufCard + ipcCard;
 
   const datesWithMarket = history.filter(h => h.market && Object.keys(h.market).length > 0);
   if (datesWithMarket.length < 2) {
@@ -630,6 +664,68 @@ function renderMacroPanel() {
     },
   });
 }
+
+/* ------------------------------------------------------------------ */
+/* Conversor cambiario: CLP, USD, EUR, PEN, ARS                         */
+/* ------------------------------------------------------------------ */
+
+const CURRENCY_META = {
+  CLP: "Peso chileno (CLP)",
+  USD: "Dólar EE.UU. (USD)",
+  EUR: "Euro (EUR)",
+  PEN: "Sol peruano (PEN)",
+  ARS: "Peso argentino (ARS)",
+};
+
+// Valor de 1 unidad de cada moneda expresado en CLP (CLP siempre = 1).
+function getLatestRatesInClp() {
+  return {
+    CLP: 1,
+    USD: findLatestMarket("usdclp")?.price ?? null,
+    EUR: findLatestMarket("eurclp")?.price ?? null,
+    PEN: findLatestMarket("penclp")?.price ?? null,
+    ARS: findLatestMarket("arsclp")?.price ?? null,
+  };
+}
+
+function populateConverterSelectors() {
+  const fromSel = document.getElementById("convFrom");
+  const toSel = document.getElementById("convTo");
+  if (fromSel.dataset.populated) return;
+  const optionsHtml = Object.entries(CURRENCY_META).map(([code, label]) => `<option value="${code}">${label}</option>`).join("");
+  fromSel.innerHTML = optionsHtml;
+  toSel.innerHTML = optionsHtml;
+  fromSel.value = "USD";
+  toSel.value = "CLP";
+  fromSel.dataset.populated = "1";
+  toSel.dataset.populated = "1";
+}
+
+function renderConverter() {
+  populateConverterSelectors();
+  computeConversion();
+}
+
+function computeConversion() {
+  const rates = getLatestRatesInClp();
+  const amount = parseFloat(document.getElementById("convAmount").value) || 0;
+  const from = document.getElementById("convFrom").value;
+  const to = document.getElementById("convTo").value;
+  const resultEl = document.getElementById("convResult");
+
+  if (rates[from] == null || rates[to] == null) {
+    const missing = [from, to].filter(c => rates[c] == null);
+    resultEl.innerHTML = `<span style="color:var(--text-muted);">Todavía no hay tipo de cambio guardado para ${missing.map(c => CURRENCY_META[c]).join(" y ")}. Vuelve después de la próxima captura automática.</span>`;
+    return;
+  }
+  const amountInClp = amount * rates[from];
+  const result = amountInClp / rates[to];
+  resultEl.innerHTML = `<span class="mono" style="font-size:19px; font-weight:600;">${amount.toLocaleString("es-CL", { maximumFractionDigits: 2 })} ${from} = ${result.toLocaleString("es-CL", { maximumFractionDigits: 2 })} ${to}</span>`;
+}
+
+document.getElementById("convAmount").addEventListener("input", computeConversion);
+document.getElementById("convFrom").addEventListener("change", computeConversion);
+document.getElementById("convTo").addEventListener("change", computeConversion);
 
 function renderSectorChart(snap) {
   document.getElementById("sectorTitle").textContent = viewMode === "cumulative"

@@ -8,6 +8,7 @@ o puedes ejecutarlo manualmente:  python scripts/fetch_data.py
 """
 
 import json
+import math
 import os
 import sys
 import urllib.request
@@ -100,9 +101,16 @@ def fetch_one(local_symbol, yahoo_ticker):
         volume = int(last["Volume"]) if not hist["Volume"].isna().iloc[-1] else None
         if len(hist) >= 2:
             prev_close = float(hist.iloc[-2]["Close"])
-            change = ((price - prev_close) / prev_close) * 100 if prev_close else 0.0
+            change = ((price - prev_close) / prev_close) * 100 if prev_close and not math.isnan(prev_close) else 0.0
         else:
             change = 0.0
+
+        # Nunca guardar NaN/Infinity: no es JSON válido y rompe el parseo en
+        # el navegador (JSON.parse es estricto, a diferencia de Python).
+        if math.isnan(price) or math.isinf(price) or math.isnan(change) or math.isinf(change):
+            print(f"  [skip] {local_symbol} ({yahoo_ticker}): precio o variación inválidos (NaN/Infinity)")
+            return None
+
         return {
             "symbol": local_symbol,
             "price": round(price, 2),
@@ -120,10 +128,13 @@ def compute_sectors(stocks):
         sector = SECTORS.get(s["symbol"])
         if not sector:
             continue
-        buckets.setdefault(sector, []).append(s["change"])
+        change = s["change"]
+        if change is None or (isinstance(change, float) and math.isnan(change)):
+            continue  # nunca promediar un NaN
+        buckets.setdefault(sector, []).append(change)
     return [
         {"name": name, "change": round(sum(vals) / len(vals), 2)}
-        for name, vals in buckets.items()
+        for name, vals in buckets.items() if vals
     ]
 
 
@@ -188,8 +199,13 @@ def load_history():
 
 def save_history(history):
     os.makedirs(os.path.dirname(HISTORY_PATH), exist_ok=True)
+    # Serializamos primero a string (con allow_nan=False) para detectar
+    # cualquier NaN/Infinity ANTES de tocar el archivo en disco — así, si algo
+    # falla, el archivo existente queda intacto en vez de quedar truncado a
+    # medio escribir.
+    payload = json.dumps(history, ensure_ascii=False, indent=2, allow_nan=False)
     with open(HISTORY_PATH, "w", encoding="utf-8") as f:
-        json.dump(history, f, ensure_ascii=False, indent=2)
+        f.write(payload)
 
 
 def main():

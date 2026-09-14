@@ -208,6 +208,28 @@ def save_history(history):
         f.write(payload)
 
 
+# Criptomonedas a seguir: símbolo -> ticker de Yahoo Finance (par contra USD).
+# Reutiliza fetch_one, así que hereda las mismas protecciones (salta si falla
+# un ticker puntual, nunca guarda NaN/Infinity).
+CRYPTO_TICKERS = {
+    "BTC": "BTC-USD",
+    "ETH": "ETH-USD",
+    "SOL": "SOL-USD",
+    "BNB": "BNB-USD",
+    "XRP": "XRP-USD",
+    "ADA": "ADA-USD",
+}
+
+
+def fetch_crypto():
+    crypto = []
+    for local_symbol, ticker in CRYPTO_TICKERS.items():
+        result = fetch_one(local_symbol, ticker)
+        if result:
+            crypto.append(result)
+    return crypto
+
+
 def main():
     print("Descargando datos de Yahoo Finance…")
     stocks = []
@@ -222,7 +244,14 @@ def main():
 
     date = today_santiago()
     market = fetch_market_indicators()
-    snapshot = {"date": date, "stocks": stocks, "sectors": compute_sectors(stocks), "market": market}
+    crypto = fetch_crypto()
+    snapshot = {
+        "date": date,
+        "stocks": stocks,
+        "sectors": compute_sectors(stocks),
+        "market": market,
+        "crypto": crypto,
+    }
 
     history = load_history()
     history = [h for h in history if h.get("date") != date]  # evita duplicar el día
@@ -230,7 +259,7 @@ def main():
     history.sort(key=lambda h: h["date"])
 
     save_history(history)
-    print(f"Listo: {len(stocks)} acciones guardadas para {date}. "
+    print(f"Listo: {len(stocks)} acciones y {len(crypto)} criptomonedas guardadas para {date}. "
           f"Historial total: {len(history)} día(s).")
 
 

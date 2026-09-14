@@ -30,6 +30,7 @@
   select { background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 9px 12px; border-radius: 8px; font-size: 13px; font-family: inherit; }
   .kpis { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 24px; }
   .kpis-3 { grid-template-columns: repeat(3, 1fr) !important; }
+  .kpis-flex { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)) !important; }
   @media (max-width: 900px) { .kpis { grid-template-columns: repeat(2, 1fr); } .grid-2, .movers { grid-template-columns: 1fr !important; } }
   .kpi { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
   .kpi-label { font-size: 11px; color: var(--text-muted); margin-bottom: 6px; }
@@ -150,6 +151,16 @@
     <div id="convResult" style="font-size:15px; margin-bottom:8px;"></div>
     <div class="mbc-hint" style="font-size:11.5px; color:var(--text-muted);">
       Tipos de cambio del último día capturado (mindicador.cl para peso/dólar/euro; Yahoo Finance para sol peruano y peso argentino, cruzados vía dólar). Referencial, no para operar en tiempo real.
+    </div>
+  </div>
+
+  <div class="panel" style="margin-bottom:24px;">
+    <h3>🪙 Criptomonedas</h3>
+    <div class="kpis kpis-flex" id="cryptoKpis" style="margin-bottom:14px;"></div>
+    <canvas id="cryptoChart" height="200"></canvas>
+    <div class="empty" id="cryptoEmpty" style="display:none;"></div>
+    <div class="mbc-hint" style="font-size:11.5px; color:var(--text-muted); margin-top:10px;">
+      Precios en dólares (Yahoo Finance), con equivalente en pesos chilenos usando el último tipo de cambio capturado. Igual que el resto del dashboard, se actualiza una vez al día, no en tiempo real.
     </div>
   </div>
 
@@ -500,6 +511,7 @@ function render() {
   safe(() => renderKpis(snap), "renderKpis");
   safe(() => renderMacroPanel(), "renderMacroPanel");
   safe(() => renderConverter(), "renderConverter");
+  safe(() => renderCryptoPanel(), "renderCryptoPanel");
   safe(() => renderSectorChart(snap), "renderSectorChart");
   safe(() => renderMarketTrend(), "renderMarketTrend");
   safe(() => renderMovers(snap), "renderMovers");
@@ -726,6 +738,94 @@ function computeConversion() {
 document.getElementById("convAmount").addEventListener("input", computeConversion);
 document.getElementById("convFrom").addEventListener("change", computeConversion);
 document.getElementById("convTo").addEventListener("change", computeConversion);
+
+/* ------------------------------------------------------------------ */
+/* Criptomonedas                                                         */
+/* ------------------------------------------------------------------ */
+
+let cryptoChart;
+const CRYPTO_META = { BTC: "Bitcoin", ETH: "Ethereum", SOL: "Solana", BNB: "BNB", XRP: "XRP", ADA: "Cardano" };
+const CRYPTO_PALETTE = ["#F0A868", "#8AA6D9", "#57A776", "#D9B36E", "#C4635A", "#A98FD2"];
+
+function latestCryptoSnapshot() {
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i].crypto && history[i].crypto.length) return history[i];
+  }
+  return null;
+}
+
+function renderCryptoPanel() {
+  const kpisEl = document.getElementById("cryptoKpis");
+  const canvas = document.getElementById("cryptoChart");
+  const emptyEl = document.getElementById("cryptoEmpty");
+  const snap = latestCryptoSnapshot();
+  const usdclp = findLatestMarket("usdclp");
+
+  if (!snap) {
+    kpisEl.innerHTML = "";
+    canvas.style.display = "none";
+    emptyEl.style.display = "block";
+    emptyEl.textContent = "Todavía no hay datos de criptomonedas guardados — se agregarán en la próxima captura automática.";
+    return;
+  }
+
+  kpisEl.innerHTML = snap.crypto.map(c => {
+    const color = c.change >= 0 ? "var(--positive)" : "var(--negative)";
+    const clpLine = usdclp
+      ? `<div style="font-size:11px; color:var(--text-muted); margin-top:2px;">$${fmtCLP(c.price * usdclp.price)} CLP</div>`
+      : "";
+    const decimals = c.price < 10 ? 4 : 2;
+    return `<div class="kpi">
+      <div class="kpi-label">${CRYPTO_META[c.symbol] || c.symbol}</div>
+      <div class="kpi-value">US$${c.price.toLocaleString("es-CL", { maximumFractionDigits: decimals })}</div>
+      <div style="font-size:12px; color:${color}; margin-top:2px;">${fmtPct(c.change)}</div>
+      ${clpLine}
+    </div>`;
+  }).join("");
+
+  const datesWithCrypto = history.filter(h => h.crypto && h.crypto.length > 0);
+  if (datesWithCrypto.length < 2) {
+    canvas.style.display = "none";
+    emptyEl.style.display = "block";
+    emptyEl.textContent = "Necesitas al menos 2 días con datos de criptomonedas para ver la tendencia.";
+    return;
+  }
+  canvas.style.display = "block";
+  emptyEl.style.display = "none";
+  if (chartLibMissing("cryptoChart")) return;
+
+  const symbols = Object.keys(CRYPTO_META).filter(sym => datesWithCrypto.some(h => h.crypto.find(c => c.symbol === sym)));
+  const datasets = symbols.map((sym, i) => {
+    const firstEntry = datesWithCrypto.find(h => h.crypto.find(c => c.symbol === sym));
+    const base = firstEntry.crypto.find(c => c.symbol === sym).price;
+    return {
+      label: sym,
+      data: datesWithCrypto.map(h => {
+        const c = h.crypto.find(x => x.symbol === sym);
+        return c ? Number(((c.price / base) * 100).toFixed(2)) : null;
+      }),
+      borderColor: CRYPTO_PALETTE[i % CRYPTO_PALETTE.length],
+      backgroundColor: CRYPTO_PALETTE[i % CRYPTO_PALETTE.length],
+      tension: 0.3, spanGaps: true,
+    };
+  });
+
+  if (cryptoChart) cryptoChart.destroy();
+  cryptoChart = new Chart(canvas, {
+    type: "line",
+    data: { labels: datesWithCrypto.map(h => fmtDate(h.date)), datasets },
+    options: {
+      plugins: {
+        legend: { labels: { color: "#ECE7DA", font: { size: 11 } } },
+        tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${c.raw}` } },
+      },
+      scales: {
+        x: { ticks: { color: "#8B93AC" }, grid: { color: "#2B3559" } },
+        y: { ticks: { color: "#8B93AC" }, grid: { color: "#2B3559" } },
+      },
+    },
+  });
+}
 
 function renderSectorChart(snap) {
   document.getElementById("sectorTitle").textContent = viewMode === "cumulative"

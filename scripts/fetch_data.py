@@ -71,6 +71,7 @@ SECTORS = {
 }
 
 HISTORY_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "history.json")
+CRYPTO_HISTORY_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "crypto_history.json")
 # Chile continuo cierra 16:00 CLT; usamos hora local del runner si ya viene en CLT,
 # si no, ajusta TZ_OFFSET_HOURS según corresponda (CLT = UTC-4, CLST verano = UTC-3).
 TZ_OFFSET_HOURS = int(os.environ.get("CHILE_TZ_OFFSET", "-4"))
@@ -198,13 +199,28 @@ def load_history():
 
 
 def save_history(history):
-    os.makedirs(os.path.dirname(HISTORY_PATH), exist_ok=True)
+    _save_json_list(HISTORY_PATH, history)
+
+
+def load_crypto_history():
+    if os.path.exists(CRYPTO_HISTORY_PATH):
+        with open(CRYPTO_HISTORY_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return []
+
+
+def save_crypto_history(entries):
+    _save_json_list(CRYPTO_HISTORY_PATH, entries)
+
+
+def _save_json_list(path, data):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     # Serializamos primero a string (con allow_nan=False) para detectar
     # cualquier NaN/Infinity ANTES de tocar el archivo en disco — así, si algo
     # falla, el archivo existente queda intacto en vez de quedar truncado a
     # medio escribir.
-    payload = json.dumps(history, ensure_ascii=False, indent=2, allow_nan=False)
-    with open(HISTORY_PATH, "w", encoding="utf-8") as f:
+    payload = json.dumps(data, ensure_ascii=False, indent=2, allow_nan=False)
+    with open(path, "w", encoding="utf-8") as f:
         f.write(payload)
 
 
@@ -244,23 +260,32 @@ def main():
 
     date = today_santiago()
     market = fetch_market_indicators()
-    crypto = fetch_crypto()
     snapshot = {
         "date": date,
         "stocks": stocks,
         "sectors": compute_sectors(stocks),
         "market": market,
-        "crypto": crypto,
     }
 
     history = load_history()
     history = [h for h in history if h.get("date") != date]  # evita duplicar el día
     history.append(snapshot)
     history.sort(key=lambda h: h["date"])
-
     save_history(history)
-    print(f"Listo: {len(stocks)} acciones y {len(crypto)} criptomonedas guardadas para {date}. "
-          f"Historial total: {len(history)} día(s).")
+
+    # Cripto vive en su propio archivo (data/crypto_history.json) porque
+    # cotiza todos los días, incluidos fines de semana — a diferencia de las
+    # acciones, que solo tienen datos desde que empezamos a trackearlas.
+    crypto = fetch_crypto()
+    crypto_history = load_crypto_history()
+    crypto_history = [c for c in crypto_history if c.get("date") != date]
+    if crypto:
+        crypto_history.append({"date": date, "crypto": crypto})
+    crypto_history.sort(key=lambda c: c["date"])
+    save_crypto_history(crypto_history)
+
+    print(f"Listo: {len(stocks)} acciones guardadas para {date} (historial: {len(history)} día(s)). "
+          f"{len(crypto)} criptomonedas guardadas (historial cripto: {len(crypto_history)} día(s)).")
 
 
 if __name__ == "__main__":

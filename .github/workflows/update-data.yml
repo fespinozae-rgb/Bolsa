@@ -2,8 +2,12 @@ name: Actualizar datos Bolsa de Santiago
 
 on:
   schedule:
-    - cron: "0 21 * * 1-5" # ~17:00 CLT, lunes a viernes
-  workflow_dispatch: {}
+    # 21:00 UTC ≈ 17:00 hora de Chile (CLT, UTC-4).
+    # Chile usa horario de verano (CLST, UTC-3) parte del año: si notas que
+    # la tarea corre una hora antes/después de lo esperado en esas fechas,
+    # ajusta este valor a "0 20 * * 1-5".
+    - cron: "0 21 * * 1-5" # lunes a viernes (el mercado no opera fines de semana)
+  workflow_dispatch: {} # permite correrlo manualmente desde la pestaña "Actions"
 
 permissions:
   contents: write
@@ -27,9 +31,9 @@ jobs:
         run: python scripts/fetch_data.py
 
       - name: Guardar cambios en el repositorio
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/history.json
-          git diff --quiet --cached || git commit -m "Actualización de datos $(date +'%Y-%m-%d')"
-          git push
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Actualización de datos automática"
+          file_pattern: "data/history.json data/crypto_history.json"
+          commit_user_name: github-actions[bot]
+          commit_user_email: github-actions[bot]@users.noreply.github.com

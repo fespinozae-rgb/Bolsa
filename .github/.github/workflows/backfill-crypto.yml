@@ -1,0 +1,40 @@
+name: Backfill histórico de criptomonedas
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_date:
+        description: "Fecha de inicio del backfill (YYYY-MM-DD)"
+        required: false
+        default: "2024-01-01"
+
+permissions:
+  contents: write
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clonar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install yfinance
+
+      - name: Descargar histórico de criptomonedas
+        env:
+          CRYPTO_BACKFILL_START: ${{ github.event.inputs.start_date }}
+        run: python scripts/backfill_crypto.py
+
+      - name: Guardar cambios en el repositorio
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Backfill histórico de criptomonedas"
+          file_pattern: data/crypto_history.json
+          commit_user_name: github-actions[bot]
+          commit_user_email: github-actions[bot]@users.noreply.github.com

@@ -303,7 +303,7 @@
     </div>
 
     <div class="mbc-hint" style="font-size:11.5px; color:var(--text-muted); margin-top:14px;">
-      Esto es una simulación con fines de aprendizaje — no ejecuta órdenes reales ni mueve dinero. Los datos se guardan solo en este navegador (localStorage); si cambias de computador o navegador no verás las mismas posiciones.
+      Esto es una simulación con fines de aprendizaje — no ejecuta órdenes reales ni mueve dinero. Los datos se guardan solo en este navegador (localStorage); si cambias de computador o navegador no verás las mismas posiciones. Las criptomonedas se cotizan en dólares; el monto que ingreses en CLP se convierte automáticamente usando el tipo de cambio USD/CLP capturado ese día (o el más cercano disponible).
     </div>
   </div>
 
@@ -1294,33 +1294,74 @@ function savePortfolio(positions) {
   try { localStorage.setItem(PF_KEY, JSON.stringify(positions)); } catch { /* localStorage no disponible */ }
 }
 
-function priceAt(symbol, date) {
+// type: "stock" (precio nativo en CLP) o "crypto" (precio nativo en USD).
+function priceAt(type, symbol, date) {
   const snap = history.find(h => h.date === date);
   if (!snap) return null;
-  const s = snap.stocks.find(x => x.symbol === symbol);
-  return s ? s.price : null;
+  const list = type === "crypto" ? snap.crypto : snap.stocks;
+  if (!list) return null;
+  const item = list.find(x => x.symbol === symbol);
+  return item ? item.price : null;
 }
 
-function latestPrice(symbol) {
+function latestPrice(type, symbol) {
   for (let i = history.length - 1; i >= 0; i--) {
-    const s = history[i].stocks.find(x => x.symbol === symbol);
-    if (s) return s.price;
+    const list = type === "crypto" ? history[i].crypto : history[i].stocks;
+    if (!list) continue;
+    const item = list.find(x => x.symbol === symbol);
+    if (item) return item.price;
   }
   return null;
+}
+
+// Tipo de cambio USD/CLP más cercano a una fecha (exacto si existe; si no,
+// el más cercano hacia atrás, y si tampoco hay, el más cercano hacia
+// adelante) — necesario porque el contexto de mercado se empezó a guardar
+// después que las acciones, así que fechas antiguas pueden no tenerlo.
+function findUsdClpRate(date) {
+  const exact = history.find(h => h.date === date);
+  if (exact && exact.market && exact.market.usdclp) return exact.market.usdclp.price;
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i].date <= date && history[i].market && history[i].market.usdclp) return history[i].market.usdclp.price;
+  }
+  for (let i = 0; i < history.length; i++) {
+    if (history[i].date >= date && history[i].market && history[i].market.usdclp) return history[i].market.usdclp.price;
+  }
+  return null;
+}
+
+function computeCurrentValueClp(p) {
+  const type = p.assetType || "stock";
+  const current = latestPrice(type, p.symbol);
+  if (current == null) return { current: null, currentValue: null };
+  if (type === "crypto") {
+    const fx = findLatestMarket("usdclp")?.price;
+    if (fx == null) return { current, currentValue: null };
+    return { current, currentValue: current * fx * p.quantity };
+  }
+  return { current, currentValue: current * p.quantity };
 }
 
 function populatePortfolioForm() {
   const snap = currentSnapshot();
   if (!snap) return;
-  const symbolOptions = snap.stocks.slice().sort((a, b) => a.symbol.localeCompare(b.symbol))
-    .map(s => `<option value="${s.symbol}">${s.symbol}</option>`).join("");
+  const stockOptions = snap.stocks.slice().sort((a, b) => a.symbol.localeCompare(b.symbol))
+    .map(s => `<option value="stock:${s.symbol}">${s.symbol}</option>`).join("");
+  const cryptoSnap = latestCryptoSnapshot();
+  const cryptoOptions = cryptoSnap
+    ? cryptoSnap.crypto.slice().sort((a, b) => a.symbol.localeCompare(b.symbol))
+      .map(c => `<option value="crypto:${c.symbol}">${CRYPTO_META[c.symbol] || c.symbol} (${c.symbol})</option>`).join("")
+    : "";
+  const symbolOptionsHtml = `<optgroup label="Acciones">${stockOptions}</optgroup>` +
+    (cryptoOptions ? `<optgroup label="Criptomonedas">${cryptoOptions}</optgroup>` : "");
+
   const dateOptions = history.slice().reverse().map(h => `<option value="${h.date}">${fmtDate(h.date)}</option>`).join("");
   const dateOptionsAsc = history.map(h => `<option value="${h.date}">${fmtDate(h.date)}</option>`).join("");
 
-  document.getElementById("pfSymbol").innerHTML = symbolOptions;
+  document.getElementById("pfSymbol").innerHTML = symbolOptionsHtml;
   document.getElementById("pfDate").innerHTML = dateOptions;
 
-  document.getElementById("pfDcaSymbol").innerHTML = symbolOptions;
+  document.getElementById("pfDcaSymbol").innerHTML = symbolOptionsHtml;
   const startSel = document.getElementById("pfDcaStart");
   const endSel = document.getElementById("pfDcaEnd");
   if (!startSel.dataset.populated) {
@@ -1338,26 +1379,41 @@ function populatePortfolioForm() {
 function handleAddPosition() {
   const errorEl = document.getElementById("pfError");
   errorEl.style.display = "none";
-  const symbol = document.getElementById("pfSymbol").value;
+  const raw = document.getElementById("pfSymbol").value;
+  const [type, symbol] = raw ? raw.split(":") : [null, null];
   const date = document.getElementById("pfDate").value;
   const amount = parseFloat(document.getElementById("pfAmount").value);
 
   if (!symbol || !date || !amount || amount <= 0) {
-    errorEl.textContent = "Completa la acción, la fecha y un monto válido mayor a 0.";
+    errorEl.textContent = "Completa la acción/cripto, la fecha y un monto válido mayor a 0.";
     errorEl.style.display = "block";
     return;
   }
-  const price = priceAt(symbol, date);
+  const price = priceAt(type, symbol, date);
   if (!price) {
     errorEl.textContent = `No hay precio registrado para ${symbol} en esa fecha.`;
     errorEl.style.display = "block";
     return;
   }
+
+  let quantity, fxRateAtBuy = null;
+  if (type === "crypto") {
+    fxRateAtBuy = findUsdClpRate(date);
+    if (!fxRateAtBuy) {
+      errorEl.textContent = `No hay tipo de cambio USD/CLP cerca de esa fecha para convertir la compra de ${symbol}. Prueba con una fecha desde el 3 de septiembre en adelante.`;
+      errorEl.style.display = "block";
+      return;
+    }
+    quantity = amount / (price * fxRateAtBuy);
+  } else {
+    quantity = amount / price;
+  }
+
   const positions = loadPortfolio();
   positions.push({
     id: Date.now(),
-    symbol, buyDate: date, buyPrice: price,
-    quantity: amount / price, investedAmount: amount,
+    assetType: type, symbol, buyDate: date, buyPrice: price,
+    quantity, investedAmount: amount, fxRateAtBuy,
   });
   savePortfolio(positions);
   document.getElementById("pfAmount").value = "";
@@ -1367,14 +1423,15 @@ function handleAddPosition() {
 function handleAddDcaPlan() {
   const errorEl = document.getElementById("pfError");
   errorEl.style.display = "none";
-  const symbol = document.getElementById("pfDcaSymbol").value;
+  const raw = document.getElementById("pfDcaSymbol").value;
+  const [type, symbol] = raw ? raw.split(":") : [null, null];
   const amount = parseFloat(document.getElementById("pfDcaAmount").value);
   const freqDays = parseInt(document.getElementById("pfDcaFreq").value, 10);
   const startDate = document.getElementById("pfDcaStart").value;
   const endDate = document.getElementById("pfDcaEnd").value;
 
   if (!symbol || !amount || amount <= 0 || !startDate || !endDate) {
-    errorEl.textContent = "Completa la acción, el monto por aporte y el rango de fechas.";
+    errorEl.textContent = "Completa la acción/cripto, el monto por aporte y el rango de fechas.";
     errorEl.style.display = "block";
     return;
   }
@@ -1397,12 +1454,14 @@ function handleAddDcaPlan() {
     const targetStr = cursor.toISOString().slice(0, 10);
     const match = history.find(h => h.date >= targetStr && h.date <= endDate);
     if (match && match.date !== lastMatchedDate) {
-      const price = priceAt(symbol, match.date);
-      if (price) {
+      const price = priceAt(type, symbol, match.date);
+      const fxRateAtBuy = type === "crypto" ? findUsdClpRate(match.date) : null;
+      if (price && (type !== "crypto" || fxRateAtBuy)) {
+        const quantity = type === "crypto" ? amount / (price * fxRateAtBuy) : amount / price;
         newPositions.push({
           id: Date.now() + newPositions.length,
-          symbol, buyDate: match.date, buyPrice: price,
-          quantity: amount / price, investedAmount: amount,
+          assetType: type, symbol, buyDate: match.date, buyPrice: price,
+          quantity, investedAmount: amount, fxRateAtBuy,
           dcaGroup: groupId,
         });
         lastMatchedDate = match.date;
@@ -1412,7 +1471,7 @@ function handleAddDcaPlan() {
   }
 
   if (newPositions.length === 0) {
-    errorEl.textContent = "No se encontraron capturas de datos válidas en ese rango para generar aportes.";
+    errorEl.textContent = "No se encontraron capturas de datos válidas (con precio y tipo de cambio, si aplica) en ese rango para generar aportes.";
     errorEl.style.display = "block";
     return;
   }
@@ -1438,6 +1497,13 @@ function removeDcaGroup(groupId) {
 }
 window.removeDcaGroup = removeDcaGroup;
 
+function fmtNativePrice(price, assetType) {
+  if (price == null) return "—";
+  return assetType === "crypto"
+    ? "US$" + price.toLocaleString("es-CL", { maximumFractionDigits: price < 10 ? 4 : 2 })
+    : fmtCLP(price);
+}
+
 function renderPortfolio() {
   populatePortfolioForm();
   const positions = loadPortfolio();
@@ -1453,9 +1519,8 @@ function renderPortfolio() {
   contentEl.style.display = "block";
 
   const rows = positions.map(p => {
-    const current = latestPrice(p.symbol);
-    const currentValue = current != null ? current * p.quantity : null;
-    return { ...p, current, currentValue };
+    const { current, currentValue } = computeCurrentValueClp(p);
+    return { ...p, assetType: p.assetType || "stock", current, currentValue };
   });
 
   const totalInvested = rows.reduce((a, r) => a + r.investedAmount, 0);
@@ -1477,16 +1542,18 @@ function renderPortfolio() {
     (dcaGroups[r.dcaGroup] = dcaGroups[r.dcaGroup] || []).push(r);
   });
 
+  const assetLabel = (type) => type === "crypto" ? "🪙" : "";
+
   const singleRowsHtml = singleRows.map(r => {
     const gain = r.currentValue != null ? r.currentValue - r.investedAmount : null;
     const gainPct = gain != null ? (gain / r.investedAmount) * 100 : null;
     return `
     <tr>
-      <td class="mono" style="text-align:left; font-weight:600;">${r.symbol}</td>
+      <td class="mono" style="text-align:left; font-weight:600;">${assetLabel(r.assetType)} ${r.symbol}</td>
       <td style="color:var(--text-muted); font-size:12px;">Compra única · ${fmtDate(r.buyDate)}</td>
-      <td>${r.quantity.toLocaleString("es-CL", {maximumFractionDigits:2})}</td>
-      <td class="mono">${fmtCLP(r.buyPrice)}</td>
-      <td class="mono">${r.current != null ? fmtCLP(r.current) : "—"}</td>
+      <td>${r.quantity.toLocaleString("es-CL", {maximumFractionDigits: r.assetType === "crypto" ? 6 : 2})}</td>
+      <td class="mono">${fmtNativePrice(r.buyPrice, r.assetType)}</td>
+      <td class="mono">${fmtNativePrice(r.current, r.assetType)}</td>
       <td>$${fmtCLP(r.investedAmount)}</td>
       <td>${r.currentValue != null ? "$" + fmtCLP(r.currentValue) : "—"}</td>
       <td style="color:${(gainPct ?? 0) >= 0 ? 'var(--positive)' : 'var(--negative)'}">${gainPct != null ? fmtPct(gainPct) : "—"}</td>
@@ -1496,20 +1563,23 @@ function renderPortfolio() {
 
   const dcaRowsHtml = Object.entries(dcaGroups).map(([groupId, group]) => {
     const symbol = group[0].symbol;
+    const assetType = group[0].assetType;
     const invested = group.reduce((a, r) => a + r.investedAmount, 0);
     const quantity = group.reduce((a, r) => a + r.quantity, 0);
-    const avgBuyPrice = invested / quantity;
-    const currentValue = group[0].current != null ? group[0].current * quantity : null;
+    const avgBuyPrice = invested / (assetType === "crypto"
+      ? group.reduce((a, r) => a + r.quantity * r.fxRateAtBuy, 0) / quantity  // precio promedio en USD equivalente
+      : quantity);
+    const currentValue = group[0].current != null ? computeCurrentValueClp({ ...group[0], quantity }).currentValue : null;
     const gain = currentValue != null ? currentValue - invested : null;
     const gainPct = gain != null ? (gain / invested) * 100 : null;
     const dates = group.map(r => r.buyDate).sort();
     return `
     <tr>
-      <td class="mono" style="text-align:left; font-weight:600;">${symbol}</td>
+      <td class="mono" style="text-align:left; font-weight:600;">${assetLabel(assetType)} ${symbol}</td>
       <td style="color:var(--text-muted); font-size:12px;">Plan DCA · ${group.length} aportes · ${fmtDate(dates[0])} - ${fmtDate(dates[dates.length-1])}</td>
-      <td>${quantity.toLocaleString("es-CL", {maximumFractionDigits:2})}</td>
-      <td class="mono" title="Precio promedio ponderado de los aportes">${fmtCLP(avgBuyPrice)} <span style="color:var(--text-muted); font-size:11px;">(prom.)</span></td>
-      <td class="mono">${group[0].current != null ? fmtCLP(group[0].current) : "—"}</td>
+      <td>${quantity.toLocaleString("es-CL", {maximumFractionDigits: assetType === "crypto" ? 6 : 2})}</td>
+      <td class="mono" title="Precio promedio ponderado de los aportes">${fmtNativePrice(avgBuyPrice, assetType)} <span style="color:var(--text-muted); font-size:11px;">(prom.)</span></td>
+      <td class="mono">${fmtNativePrice(group[0].current, assetType)}</td>
       <td>$${fmtCLP(invested)}</td>
       <td>${currentValue != null ? "$" + fmtCLP(currentValue) : "—"}</td>
       <td style="color:${(gainPct ?? 0) >= 0 ? 'var(--positive)' : 'var(--negative)'}">${gainPct != null ? fmtPct(gainPct) : "—"}</td>
@@ -1545,8 +1615,15 @@ function renderPortfolioChart(rows) {
     rows.forEach(r => {
       if (r.buyDate > h.date) return;
       invested += r.investedAmount;
-      const stock = h.stocks.find(x => x.symbol === r.symbol);
-      value += stock ? stock.price * r.quantity : r.investedAmount;
+      const type = r.assetType || "stock";
+      if (type === "crypto") {
+        const coin = h.crypto && h.crypto.find(x => x.symbol === r.symbol);
+        const fx = findUsdClpRate(h.date);
+        value += (coin && fx) ? coin.price * fx * r.quantity : r.investedAmount;
+      } else {
+        const stock = h.stocks.find(x => x.symbol === r.symbol);
+        value += stock ? stock.price * r.quantity : r.investedAmount;
+      }
     });
     valueSeries.push(Number(value.toFixed(0)));
     investedSeries.push(Number(invested.toFixed(0)));

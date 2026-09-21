@@ -160,9 +160,11 @@
     <div class="tabs" id="cryptoRangeTabs" style="margin-bottom:10px; display:none;">
       <button class="tab" data-range="30">30 días</button>
       <button class="tab" data-range="90">90 días</button>
+      <button class="tab" data-range="180">6 meses</button>
       <button class="tab" data-range="365">1 año</button>
       <button class="tab active" data-range="all">Todo</button>
     </div>
+    <div style="font-size:11px; color:var(--text-muted); margin-bottom:6px;">El gráfico muestra la variación % de cada moneda desde el inicio del rango elegido (no el precio en dólares).</div>
     <canvas id="cryptoChart" height="200"></canvas>
     <div class="empty" id="cryptoEmpty" style="display:none;"></div>
     <div class="mbc-hint" style="font-size:11.5px; color:var(--text-muted); margin-top:10px;">
@@ -828,7 +830,7 @@ function renderCryptoPanel() {
       label: sym,
       data: datesWithCrypto.map(h => {
         const c = h.crypto.find(x => x.symbol === sym);
-        return c ? Number(((c.price / base) * 100).toFixed(2)) : null;
+        return c ? Number((((c.price / base) - 1) * 100).toFixed(2)) : null;
       }),
       borderColor: CRYPTO_PALETTE[i % CRYPTO_PALETTE.length],
       backgroundColor: CRYPTO_PALETTE[i % CRYPTO_PALETTE.length],
@@ -844,11 +846,11 @@ function renderCryptoPanel() {
     options: {
       plugins: {
         legend: { labels: { color: "#ECE7DA", font: { size: 11 } } },
-        tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${c.raw}` } },
+        tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${fmtPct(c.raw)}` } },
       },
       scales: {
         x: { ticks: { color: "#8B93AC", maxTicksLimit: 12 }, grid: { color: "#2B3559" } },
-        y: { ticks: { color: "#8B93AC" }, grid: { color: "#2B3559" } },
+        y: { ticks: { color: "#8B93AC", callback: (v) => v + "%" }, grid: { color: "#2B3559" } },
       },
     },
   });

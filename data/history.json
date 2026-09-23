@@ -3051,5 +3051,244 @@
         "price": 0.6233
       }
     }
+  },
+  {
+    "date": "2026-09-23",
+    "stocks": [
+      {
+        "symbol": "AGUAS-A",
+        "price": 334.0,
+        "change": -0.3,
+        "volume": 8611750
+      },
+      {
+        "symbol": "ANTARCHILE",
+        "price": 7564.0,
+        "change": 0.46,
+        "volume": 2498
+      },
+      {
+        "symbol": "BSANTANDER",
+        "price": 83.18,
+        "change": 1.66,
+        "volume": 123170697
+      },
+      {
+        "symbol": "CAP",
+        "price": 5394.0,
+        "change": 0.07,
+        "volume": 28562
+      },
+      {
+        "symbol": "CCU",
+        "price": 5351.0,
+        "change": 0.39,
+        "volume": 139593
+      },
+      {
+        "symbol": "CENCOMALLS",
+        "price": 2295.7,
+        "change": 2.49,
+        "volume": 1724046
+      },
+      {
+        "symbol": "CENCOSUD",
+        "price": 2029.0,
+        "change": -2.92,
+        "volume": 2558969
+      },
+      {
+        "symbol": "CHILE",
+        "price": 203.0,
+        "change": 2.58,
+        "volume": 123786958
+      },
+      {
+        "symbol": "CMPC",
+        "price": 966.5,
+        "change": 0.99,
+        "volume": 2977149
+      },
+      {
+        "symbol": "COLBUN",
+        "price": 147.29,
+        "change": -0.48,
+        "volume": 26072785
+      },
+      {
+        "symbol": "COPEC",
+        "price": 6600.0,
+        "change": 2.64,
+        "volume": 1080497
+      },
+      {
+        "symbol": "ECL",
+        "price": 1925.0,
+        "change": 3.77,
+        "volume": 741428
+      },
+      {
+        "symbol": "ENELAM",
+        "price": 86.01,
+        "change": -4.43,
+        "volume": 44344791
+      },
+      {
+        "symbol": "ENELCHILE",
+        "price": 83.49,
+        "change": 2.4,
+        "volume": 69811130
+      },
+      {
+        "symbol": "ENTEL",
+        "price": 4000.0,
+        "change": 0.58,
+        "volume": 120825
+      },
+      {
+        "symbol": "FALABELLA",
+        "price": 6638.9,
+        "change": 0.6,
+        "volume": 2381222
+      },
+      {
+        "symbol": "IAM",
+        "price": 932.61,
+        "change": -2.4,
+        "volume": 153559
+      },
+      {
+        "symbol": "ILC",
+        "price": 25549.0,
+        "change": 2.2,
+        "volume": 37219
+      },
+      {
+        "symbol": "MALLPLAZA",
+        "price": 3740.0,
+        "change": -4.1,
+        "volume": 3542707
+      },
+      {
+        "symbol": "PARAUCO",
+        "price": 3908.9,
+        "change": 0.23,
+        "volume": 423668
+      },
+      {
+        "symbol": "QUINENCO",
+        "price": 4800.0,
+        "change": 3.9,
+        "volume": 181883
+      },
+      {
+        "symbol": "RIPLEY",
+        "price": 459.99,
+        "change": 4.07,
+        "volume": 1602579
+      },
+      {
+        "symbol": "SALFACORP",
+        "price": 1349.0,
+        "change": 2.59,
+        "volume": 369451
+      },
+      {
+        "symbol": "SMU",
+        "price": 119.3,
+        "change": 1.53,
+        "volume": 15438828
+      },
+      {
+        "symbol": "SONDA",
+        "price": 292.09,
+        "change": -0.99,
+        "volume": 65477
+      },
+      {
+        "symbol": "SQM-B",
+        "price": 66890.0,
+        "change": 2.2,
+        "volume": 283103
+      },
+      {
+        "symbol": "VAPORES",
+        "price": 50.9,
+        "change": 9.44,
+        "volume": 15700199
+      }
+    ],
+    "sectors": [
+      {
+        "name": "Servicios Públicos",
+        "change": -1.35
+      },
+      {
+        "name": "Holdings e Inversiones",
+        "change": 2.18
+      },
+      {
+        "name": "Banca y Finanzas",
+        "change": 2.12
+      },
+      {
+        "name": "Industria y Materiales",
+        "change": 1.09
+      },
+      {
+        "name": "Consumo Básico",
+        "change": 0.39
+      },
+      {
+        "name": "Inmobiliario y Construcción",
+        "change": 0.3
+      },
+      {
+        "name": "Retail",
+        "change": 0.82
+      },
+      {
+        "name": "Energía",
+        "change": 0.78
+      },
+      {
+        "name": "Telecomunicaciones y Tecnología",
+        "change": -0.21
+      },
+      {
+        "name": "Salud",
+        "change": 2.2
+      },
+      {
+        "name": "Transporte",
+        "change": 9.44
+      }
+    ],
+    "market": {
+      "usdclp": {
+        "price": 960.98,
+        "change": 1.5
+      },
+      "copper": {
+        "price": 6.79,
+        "change": 0.46
+      },
+      "uf": {
+        "price": 40999.93
+      },
+      "ipc": {
+        "value": -0.2,
+        "period": "2025-12"
+      },
+      "eurclp": {
+        "price": 1081.49
+      },
+      "penclp": {
+        "price": 284.3136
+      },
+      "arsclp": {
+        "price": 0.6341
+      }
+    }
   }
 ]

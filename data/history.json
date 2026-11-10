@@ -10910,5 +10910,48 @@
         "price": 0.6328
       }
     }
+  },
+  {
+    "date": "2026-11-09",
+    "stocks": [
+      {
+        "symbol": "SONDA",
+        "price": 265.0,
+        "change": 0.0,
+        "volume": 0
+      }
+    ],
+    "sectors": [
+      {
+        "name": "Telecomunicaciones y Tecnología",
+        "change": 0.0
+      }
+    ],
+    "market": {
+      "usdclp": {
+        "price": 954.99,
+        "change": -2.32
+      },
+      "copper": {
+        "price": 6.36,
+        "change": 2.31
+      },
+      "uf": {
+        "price": 41295.46
+      },
+      "ipc": {
+        "value": -0.2,
+        "period": "2025-12"
+      },
+      "eurclp": {
+        "price": 1092.4
+      },
+      "penclp": {
+        "price": 280.0557
+      },
+      "arsclp": {
+        "price": 0.618
+      }
+    }
   }
 ]

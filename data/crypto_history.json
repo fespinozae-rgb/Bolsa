@@ -42433,5 +42433,46 @@
         "volume": 258846800
       }
     ]
+  },
+  {
+    "date": "2026-11-18",
+    "crypto": [
+      {
+        "symbol": "BTC",
+        "price": 62692.05,
+        "change": -3.39,
+        "volume": 30815369216
+      },
+      {
+        "symbol": "ETH",
+        "price": 1772.03,
+        "change": -2.79,
+        "volume": 10764741632
+      },
+      {
+        "symbol": "SOL",
+        "price": 73.27,
+        "change": -2.44,
+        "volume": 2307456768
+      },
+      {
+        "symbol": "BNB",
+        "price": 580.13,
+        "change": -2.67,
+        "volume": 827360960
+      },
+      {
+        "symbol": "XRP",
+        "price": 0.96,
+        "change": -2.27,
+        "volume": 1898623232
+      },
+      {
+        "symbol": "ADA",
+        "price": 0.15,
+        "change": -2.96,
+        "volume": 225321376
+      }
+    ]
   }
 ]
